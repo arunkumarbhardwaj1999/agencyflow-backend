@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -39,3 +41,11 @@ def decode_token(token: str) -> dict[str, Any]:
 
 def token_subject_uuid(token_payload: dict[str, Any]) -> UUID:
     return UUID(token_payload["sub"])
+
+
+def generate_reset_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

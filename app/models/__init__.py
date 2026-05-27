@@ -2,6 +2,7 @@ from app.models.client import Client
 from app.models.company import Company
 from app.models.invoice import Invoice
 from app.models.lead import Lead
+from app.models.password_reset_token import PasswordResetToken
 from app.models.project import Project
 from app.models.role import Role
 from app.models.subscription_plan import SubscriptionPlan
@@ -16,6 +17,7 @@ __all__ = [
     "User",
     "Client",
     "Lead",
+    "PasswordResetToken",
     "Project",
     "Task",
     "Invoice",

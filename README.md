@@ -6,6 +6,14 @@ FastAPI + PostgreSQL 16 + SQLAlchemy 2.0 + Alembic + JWT auth.
 
 ```bash
 cp .env.example .env
+```
+
+Set these in `.env` before running:
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
+- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+- `FRONTEND_URL=http://localhost:3000`
+
+```bash
 docker compose up --build
 ```
 
