@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, require_company, require_permission
+from app.core.realtime import realtime_manager
 from app.db.session import get_db
 from app.models.project import Project
 from app.models.task import Task
@@ -44,6 +45,7 @@ async def create_task(
     db.add(task)
     await db.flush()
     await db.refresh(task)
+    await realtime_manager.broadcast(current.company_id, "task", f"Task created: {task.title}")
     return task
 
 
@@ -81,6 +83,7 @@ async def update_task(
         setattr(task, k, v)
     await db.flush()
     await db.refresh(task)
+    await realtime_manager.broadcast(current.company_id, "task", f"Task updated: {task.title} ({task.status})")
     return task
 
 
@@ -91,7 +94,9 @@ async def delete_task(
     db: AsyncSession = Depends(get_db),
 ):
     task = await _get_task(db, task_id, current)
+    task_title = task.title
     await db.delete(task)
+    await realtime_manager.broadcast(current.company_id, "task", f"Task removed: {task_title}")
     return MessageResponse(message="Task deleted")
 
 

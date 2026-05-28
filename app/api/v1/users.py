@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.deps import CurrentUser, require_permission
+from app.core.plans import assert_can_add_user
 from app.core.security import hash_password
 from app.db.session import get_db
-from app.integrations.supabase_auth import create_user as supabase_create_user
 from app.models.role import Role
 from app.models.user import User
 from app.schemas.user import StaffCreateRequest, StaffOut, StaffUpdateRequest
@@ -61,11 +61,10 @@ async def create_staff(
     if email_exists.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    supabase_user_id = await supabase_create_user(body.email, body.password)
+    await assert_can_add_user(db, current.company_id)
 
     user = User(
         company_id=current.company_id,
-        supabase_user_id=supabase_user_id,
         first_name=body.first_name,
         last_name=body.last_name,
         email=body.email,

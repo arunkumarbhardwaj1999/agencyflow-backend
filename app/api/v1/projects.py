@@ -5,7 +5,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import CurrentUser, require_company, require_permission
+from app.core.deps import CurrentUser, require_permission, require_staff
+from app.core.realtime import realtime_manager
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.project import Project
@@ -20,7 +21,7 @@ PROJECT_STATUSES = {"planning", "active", "review", "completed"}
 
 @router.get("", response_model=list[ProjectOut])
 async def list_projects(
-    current: CurrentUser = Depends(require_company),
+    current: CurrentUser = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -55,13 +56,14 @@ async def create_project(
     db.add(project)
     await db.flush()
     await db.refresh(project, ["tasks"])
+    await realtime_manager.broadcast(current.company_id, "project", f"Project created: {project.title}")
     return _project_out(project)
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
 async def get_project(
     project_id: UUID,
-    current: CurrentUser = Depends(require_company),
+    current: CurrentUser = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id, current.company_id)
@@ -89,6 +91,7 @@ async def update_project(
         setattr(project, k, v)
     await db.flush()
     await db.refresh(project, ["tasks"])
+    await realtime_manager.broadcast(current.company_id, "project", f"Project updated: {project.title}")
     return _project_out(project)
 
 
@@ -99,7 +102,9 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_project(db, project_id, current.company_id)
+    title = project.title
     await db.delete(project)
+    await realtime_manager.broadcast(current.company_id, "project", f"Project removed: {title}")
     return MessageResponse(message="Project deleted")
 
 

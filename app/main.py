@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from uuid import UUID
+
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -8,6 +10,8 @@ from slowapi.util import get_remote_address
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.realtime import realtime_manager
+from app.core.security import decode_token
 
 settings = get_settings()
 limiter = Limiter(key_func=get_remote_address, default_limits=[settings.rate_limit])
@@ -41,6 +45,28 @@ app.add_middleware(
 @limiter.limit(settings.rate_limit)
 async def health(request: Request):
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.websocket("/ws/dashboard/{company_id}")
+async def dashboard_ws(websocket: WebSocket, company_id: UUID, token: str):
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            await websocket.close(code=1008, reason="Invalid token type")
+            return
+        if payload.get("company_id") != str(company_id):
+            await websocket.close(code=1008, reason="Token workspace mismatch")
+            return
+    except Exception:
+        await websocket.close(code=1008, reason="Invalid token")
+        return
+
+    await realtime_manager.connect(company_id, websocket)
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        realtime_manager.disconnect(company_id, websocket)
 
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)

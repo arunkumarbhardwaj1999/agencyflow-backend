@@ -6,6 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, require_permission
+from app.core.realtime import realtime_manager
 from app.db.session import get_db
 from app.models.invoice import Invoice
 from app.models.lead import Lead
@@ -99,5 +100,16 @@ async def get_dashboard(
                 created_at=lead.created_at,
             )
         )
+    for ev in realtime_manager.recent(cid, limit=5):
+        activity.append(
+            ActivityEvent(
+                id=ev["id"],
+                type=ev["type"],
+                message=ev["message"],
+                created_at=datetime.fromisoformat(ev["created_at"]),
+            )
+        )
+    activity.sort(key=lambda item: item.created_at, reverse=True)
+    activity = activity[:8]
 
     return DashboardResponse(kpis=kpis, upcoming_deadlines=deadlines, recent_activity=activity)

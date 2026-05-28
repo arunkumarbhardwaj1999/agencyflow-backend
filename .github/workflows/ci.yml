@@ -7,7 +7,7 @@ on:
     branches: [main, develop]
 
 jobs:
-  lint-and-import:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -16,3 +16,4 @@ jobs:
           python-version: "3.13"
       - run: pip install -r requirements.txt
       - run: python -c "from app.main import app; print(app.title)"
+      - run: pytest tests/ -q

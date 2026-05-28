@@ -6,14 +6,6 @@ FastAPI + PostgreSQL 16 + SQLAlchemy 2.0 + Alembic + JWT auth.
 
 ```bash
 cp .env.example .env
-```
-
-Set these in `.env` before running:
-- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_SECRET`
-- `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
-- `FRONTEND_URL=http://localhost:3000`
-
-```bash
 docker compose up --build
 ```
 
@@ -42,3 +34,6 @@ uvicorn app.main:app --reload
 | Projects | `/api/v1/projects` |
 | Tasks | `/api/v1/tasks` |
 | Dashboard | `/api/v1/dashboard` |
+| Invoices | `/api/v1/invoices` |
+| Client portal | `/api/v1/portal` |
+| Staff | `/api/v1/users` |

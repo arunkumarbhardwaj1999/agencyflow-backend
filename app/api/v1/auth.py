@@ -2,16 +2,23 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from jose import JWTError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user
-from app.core.security import generate_reset_token, hash_password, hash_token
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    generate_reset_token,
+    hash_password,
+    hash_token,
+    token_subject_uuid,
+    verify_password,
+)
+from app.core.plans import get_starter_plan
 from app.db.session import get_db
-from app.integrations.email import send_password_reset_email
-from app.integrations.supabase_auth import create_user as supabase_create_user
-from app.integrations.supabase_auth import refresh_session, sign_in, update_password as supabase_update_password
 from app.models.company import Company
 from app.models.password_reset_token import PasswordResetToken
 from app.models.role import Role
@@ -27,23 +34,6 @@ from app.schemas.auth import (
 from app.schemas.common import MessageResponse, TokenResponse, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-settings = get_settings()
-
-
-def _ensure_supabase_configured() -> None:
-    if not settings.supabase_url or not settings.supabase_service_role_key or not settings.supabase_jwt_secret:
-        raise HTTPException(
-            status_code=500,
-            detail="Supabase is not configured. Set SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET.",
-        )
-
-
-def _tokens_from_session(session: dict) -> TokenResponse:
-    return TokenResponse(
-        access_token=session["access_token"],
-        refresh_token=session["refresh_token"],
-        token_type=session.get("token_type", "bearer"),
-    )
 
 
 def _user_out(user: User, role_name: str) -> UserOut:
@@ -63,8 +53,6 @@ def _user_out(user: User, role_name: str) -> UserOut:
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
-    _ensure_supabase_configured()
-
     slug_exists = await db.execute(select(Company).where(Company.slug == body.slug))
     if slug_exists.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Workspace slug already taken")
@@ -78,8 +66,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if not role:
         raise HTTPException(status_code=500, detail="System roles not seeded. Run: python -m scripts.seed_roles")
 
-    supabase_user_id = await supabase_create_user(body.email, body.password)
-
+    starter = await get_starter_plan(db)
     company = Company(
         company_name=body.company_name,
         slug=body.slug.lower(),
@@ -87,13 +74,13 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         phone=body.phone,
         address=body.address,
         gst_number=body.gst_number,
+        subscription_plan_id=starter.id if starter else None,
     )
     db.add(company)
     await db.flush()
 
     user = User(
         company_id=company.id,
-        supabase_user_id=supabase_user_id,
         first_name=body.first_name,
         last_name=body.last_name,
         email=body.email,
@@ -104,33 +91,55 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
-
-    session = await sign_in(body.email, body.password)
-    return _tokens_from_session(session)
+    access = create_access_token(
+        str(user.id),
+        extra={"company_id": str(company.id), "role": "owner"},
+    )
+    refresh = create_refresh_token(str(user.id))
+    return TokenResponse(access_token=access, refresh_token=refresh)
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    _ensure_supabase_configured()
-
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
-    if not user:
+    if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
-    if not user.supabase_user_id:
-        raise HTTPException(status_code=400, detail="Account is not linked to Supabase Auth yet")
-
-    session = await sign_in(body.email, body.password)
-    return _tokens_from_session(session)
+    role_result = await db.execute(select(Role).where(Role.id == user.role_id))
+    role = role_result.scalar_one()
+    access = create_access_token(
+        str(user.id),
+        extra={"company_id": str(user.company_id) if user.company_id else None, "role": role.name},
+    )
+    refresh = create_refresh_token(str(user.id))
+    return TokenResponse(access_token=access, refresh_token=refresh)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    _ensure_supabase_configured()
-    session = await refresh_session(body.refresh_token)
-    return _tokens_from_session(session)
+    try:
+        payload = decode_token(body.refresh_token)
+        if payload.get("type") != "refresh":
+            raise HTTPException(status_code=401, detail="Invalid refresh token")
+        user_id = token_subject_uuid(payload)
+    except (JWTError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid refresh token") from None
+
+    result = await db.execute(select(User).where(User.id == user_id, User.is_active.is_(True)))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    role_result = await db.execute(select(Role).where(Role.id == user.role_id))
+    role = role_result.scalar_one()
+    access = create_access_token(
+        str(user.id),
+        extra={"company_id": str(user.company_id) if user.company_id else None, "role": role.name},
+    )
+    new_refresh = create_refresh_token(str(user.id))
+    return TokenResponse(access_token=access, refresh_token=new_refresh)
 
 
 @router.post("/logout", response_model=MessageResponse)
@@ -159,28 +168,33 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
                 expires_at=datetime.now(UTC) + timedelta(minutes=30),
             )
         )
-        reset_url = f"{settings.frontend_url}/reset-password?token={reset_token}"
-        await send_password_reset_email(user.email, reset_url)
-
     return ForgotPasswordResponse(
         message="If that email exists, a reset link has been sent.",
-        reset_token=reset_token if settings.debug else None,
+        reset_token=reset_token,
+        email=user.email if user and reset_token else None,
     )
 
 
 @router.post("/reset-password", response_model=MessageResponse)
 async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(get_db)):
-    token_hash = hash_token(body.token)
+    token_hash = hash_token(body.token.strip())
+    now = datetime.now(UTC)
     result = await db.execute(
-        select(PasswordResetToken).where(
-            PasswordResetToken.token_hash == token_hash,
-            PasswordResetToken.used_at.is_(None),
-            PasswordResetToken.expires_at > datetime.now(UTC),
-        )
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
     )
     token_row = result.scalar_one_or_none()
     if not token_row:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        raise HTTPException(status_code=400, detail="Invalid reset token")
+    if token_row.used_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="This reset token was already used. Generate a new token on the forgot password page.",
+        )
+    if token_row.expires_at <= now:
+        raise HTTPException(
+            status_code=400,
+            detail="Reset token expired. Generate a new token (valid for 30 minutes).",
+        )
 
     user_result = await db.execute(select(User).where(User.id == token_row.user_id))
     user = user_result.scalar_one_or_none()
@@ -188,8 +202,6 @@ async def reset_password(body: ResetPasswordRequest, db: AsyncSession = Depends(
         raise HTTPException(status_code=404, detail="User not found")
 
     user.password_hash = hash_password(body.new_password)
-    if user.supabase_user_id:
-        await supabase_update_password(user.supabase_user_id, body.new_password)
 
     token_row.used_at = datetime.now(UTC)
     return MessageResponse(message="Password reset successfully")

@@ -1,0 +1,47 @@
+from collections import defaultdict, deque
+from datetime import UTC, datetime
+from uuid import UUID, uuid4
+
+from fastapi import WebSocket
+
+
+class RealtimeManager:
+    def __init__(self) -> None:
+        self._connections: dict[str, set[WebSocket]] = defaultdict(set)
+        self._recent_events: dict[str, deque[dict]] = defaultdict(lambda: deque(maxlen=50))
+
+    async def connect(self, company_id: UUID, websocket: WebSocket) -> None:
+        key = str(company_id)
+        await websocket.accept()
+        self._connections[key].add(websocket)
+
+    def disconnect(self, company_id: UUID, websocket: WebSocket) -> None:
+        key = str(company_id)
+        if key in self._connections:
+            self._connections[key].discard(websocket)
+            if not self._connections[key]:
+                del self._connections[key]
+
+    async def broadcast(self, company_id: UUID, event_type: str, message: str) -> None:
+        payload = {
+            "id": f"{event_type}-{uuid4()}",
+            "type": event_type,
+            "message": message,
+            "created_at": datetime.now(UTC).isoformat(),
+        }
+        key = str(company_id)
+        self._recent_events[key].appendleft(payload)
+        dead_connections: list[WebSocket] = []
+        for ws in self._connections.get(key, set()):
+            try:
+                await ws.send_json(payload)
+            except Exception:
+                dead_connections.append(ws)
+        for ws in dead_connections:
+            self.disconnect(company_id, ws)
+
+    def recent(self, company_id: UUID, limit: int = 5) -> list[dict]:
+        return list(self._recent_events[str(company_id)])[:limit]
+
+
+realtime_manager = RealtimeManager()

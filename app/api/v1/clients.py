@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import CurrentUser, require_company, require_permission
+from app.core.deps import CurrentUser, require_permission, require_staff
+from app.core.plans import assert_can_add_client
+from app.core.realtime import realtime_manager
 from app.db.session import get_db
 from app.models.client import Client
 from app.models.invoice import Invoice
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/clients", tags=["clients"])
 
 @router.get("", response_model=list[ClientOut])
 async def list_clients(
-    current: CurrentUser = Depends(require_company),
+    current: CurrentUser = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
@@ -36,17 +38,19 @@ async def create_client(
     current: CurrentUser = Depends(require_permission("manage_leads")),
     db: AsyncSession = Depends(get_db),
 ):
+    await assert_can_add_client(db, current.company_id)
     client = Client(company_id=current.company_id, **body.model_dump())
     db.add(client)
     await db.flush()
     await db.refresh(client)
+    await realtime_manager.broadcast(current.company_id, "client", f"Client added: {client.business_name}")
     return await _enrich_client(db, client)
 
 
 @router.get("/{client_id}", response_model=ClientOut)
 async def get_client(
     client_id: UUID,
-    current: CurrentUser = Depends(require_company),
+    current: CurrentUser = Depends(require_staff),
     db: AsyncSession = Depends(get_db),
 ):
     client = await _get_client(db, client_id, current.company_id)
@@ -65,6 +69,7 @@ async def update_client(
         setattr(client, k, v)
     await db.flush()
     await db.refresh(client)
+    await realtime_manager.broadcast(current.company_id, "client", f"Client updated: {client.business_name}")
     return await _enrich_client(db, client)
 
 
@@ -83,7 +88,9 @@ async def delete_client(
     )
     if inv_count.scalar_one() > 0:
         raise HTTPException(status_code=400, detail="Cannot delete client with active unpaid invoices")
+    business_name = client.business_name
     await db.delete(client)
+    await realtime_manager.broadcast(current.company_id, "client", f"Client removed: {business_name}")
     return MessageResponse(message="Client deleted")
 
 

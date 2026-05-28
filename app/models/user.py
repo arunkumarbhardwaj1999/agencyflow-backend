@@ -18,9 +18,6 @@ class User(Base):
     first_name: Mapped[str] = mapped_column(String(100), nullable=False)
     last_name: Mapped[str | None] = mapped_column(String(100))
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
-    supabase_user_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), unique=True, index=True
-    )
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str | None] = mapped_column(String(20))
     avatar: Mapped[str | None] = mapped_column(Text)
