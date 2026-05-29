@@ -30,6 +30,7 @@ services:
       sh -c "alembic upgrade head &&
              python -m scripts.seed_roles &&
              python -m scripts.seed_plans &&
+             python -m scripts.verify_schema &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 volumes:

@@ -11,6 +11,8 @@ docker compose up --build
 
 API: http://localhost:8000/docs
 
+**Database schema docs:** [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) · Verify: `docker compose exec api python -m scripts.verify_schema`
+
 ## Local development
 
 ```bash
