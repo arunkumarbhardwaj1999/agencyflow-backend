@@ -34,3 +34,10 @@ class StaffOut(ORMModel):
     is_active: bool
     is_verified: bool
     created_at: datetime
+
+
+class MemberOut(BaseModel):
+    id: UUID
+    name: str
+    email: str
+    role: str

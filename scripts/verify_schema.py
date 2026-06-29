@@ -61,14 +61,13 @@ async def verify() -> int:
         alembic_ver = version.scalar_one_or_none()
 
     print("=== AgencyFlow schema verification ===\n")
-    print(f"Production tables ({len(REQUIRED_TABLES)}): OK" if not errors else "")
     for t in REQUIRED_TABLES:
         status = "OK" if t in tables else "MISSING"
         print(f"  [{status}] {t}")
 
     print("\nExtra tables:")
     for t in sorted(tables):
-        if t in EXTRA_TABLES or t == "password_reset_tokens":
+        if t in EXTRA_TABLES:
             print(f"  [OK] {t}")
 
     print("\nIndexes:")

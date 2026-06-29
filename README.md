@@ -11,8 +11,6 @@ docker compose up --build
 
 API: http://localhost:8000/docs
 
-**Docs:** [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) · [`docs/LEADS_PIPELINE.md`](docs/LEADS_PIPELINE.md) · Verify DB: `docker compose exec api python -m scripts.verify_schema`
-
 ## Local development
 
 ```bash
@@ -20,13 +18,14 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# Start PostgreSQL (docker compose up db -d)
+docker compose up db -d
 alembic upgrade head
 python -m scripts.seed_roles
+python -m scripts.seed_plans
 uvicorn app.main:app --reload
 ```
 
-## Phase 1 API routes
+## API routes
 
 | Module | Prefix |
 |--------|--------|
@@ -39,3 +38,9 @@ uvicorn app.main:app --reload
 | Invoices | `/api/v1/invoices` |
 | Client portal | `/api/v1/portal` |
 | Staff | `/api/v1/users` |
+
+## Docs
+
+- [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md)
+- [`docs/LEADS_PIPELINE.md`](docs/LEADS_PIPELINE.md)
+- Verify DB: `python -m scripts.verify_schema`

@@ -5,13 +5,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.deps import CurrentUser, require_permission
+from app.core.deps import CurrentUser, require_permission, require_staff
 from app.core.plans import assert_can_add_user
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.role import Role
 from app.models.user import User
-from app.schemas.user import StaffCreateRequest, StaffOut, StaffUpdateRequest
+from app.schemas.user import MemberOut, StaffCreateRequest, StaffOut, StaffUpdateRequest
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -44,6 +44,28 @@ async def list_staff(
         .order_by(User.created_at.desc())
     )
     return [_to_out(u) for u in result.scalars().all()]
+
+
+@router.get("/members", response_model=list[MemberOut])
+async def list_members(
+    current: CurrentUser = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lightweight roster of active staff for assignment dropdowns (any staff can read)."""
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.role))
+        .where(User.company_id == current.company_id, User.is_active.is_(True))
+        .order_by(User.first_name.asc())
+    )
+    members: list[MemberOut] = []
+    for u in result.scalars().all():
+        role_name = u.role.name if u.role else "employee"
+        if role_name == "client":
+            continue
+        full_name = f"{u.first_name} {u.last_name or ''}".strip()
+        members.append(MemberOut(id=u.id, name=full_name, email=u.email, role=role_name))
+    return members
 
 
 @router.post("", response_model=StaffOut, status_code=status.HTTP_201_CREATED)

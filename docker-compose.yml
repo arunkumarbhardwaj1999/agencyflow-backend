@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: agencyflow
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -14,7 +14,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+ 
   api:
     build: .
     ports:
@@ -30,7 +30,6 @@ services:
       sh -c "alembic upgrade head &&
              python -m scripts.seed_roles &&
              python -m scripts.seed_plans &&
-             python -m scripts.verify_schema &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
 volumes:
