@@ -20,6 +20,7 @@ class Company(Base):
     website: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(Text)
     gst_number: Mapped[str | None] = mapped_column(String(15))
+    state_code: Mapped[str | None] = mapped_column(String(2))
     timezone: Mapped[str] = mapped_column(String(50), default="Asia/Kolkata")
     subscription_plan_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("subscription_plans.id", ondelete="SET NULL")

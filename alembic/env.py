@@ -12,6 +12,7 @@ from app.models import (  # noqa: F401
     Client,
     Company,
     Invoice,
+    InvoiceItem,
     Lead,
     Project,
     Role,

@@ -12,4 +12,7 @@ python-multipart==0.0.20
 email-validator==2.2.0
 httpx==0.28.1
 slowapi==0.1.9
+reportlab==4.2.5
+razorpay==1.4.2
+stripe==11.4.1
 pytest==8.3.4

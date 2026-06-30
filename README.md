@@ -35,7 +35,8 @@ uvicorn app.main:app --reload
 | Projects | `/api/v1/projects` |
 | Tasks | `/api/v1/tasks` |
 | Dashboard | `/api/v1/dashboard` |
-| Invoices | `/api/v1/invoices` |
+| Invoices (GST + PDF) | `/api/v1/invoices` |
+| Payments (links + webhooks) | `/api/v1/payments` |
 | Client portal | `/api/v1/portal` |
 | Staff | `/api/v1/users` |
 
@@ -43,4 +44,6 @@ uvicorn app.main:app --reload
 
 - [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md)
 - [`docs/LEADS_PIPELINE.md`](docs/LEADS_PIPELINE.md)
+- [`docs/BILLING_PAYMENTS.md`](docs/BILLING_PAYMENTS.md)
+- [`docs/CLIENT_PORTAL.md`](docs/CLIENT_PORTAL.md)
 - Verify DB: `python -m scripts.verify_schema`

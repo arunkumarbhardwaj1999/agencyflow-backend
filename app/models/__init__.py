@@ -1,6 +1,6 @@
 from app.models.client import Client
 from app.models.company import Company
-from app.models.invoice import Invoice
+from app.models.invoice import Invoice, InvoiceItem
 from app.models.lead import Lead
 from app.models.password_reset_token import PasswordResetToken
 from app.models.project import Project
@@ -21,5 +21,6 @@ __all__ = [
     "Project",
     "Task",
     "Invoice",
+    "InvoiceItem",
     "WhatsAppLog",
 ]

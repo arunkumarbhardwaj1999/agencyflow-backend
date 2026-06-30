@@ -7,20 +7,34 @@ from pydantic import BaseModel, Field
 from app.schemas.common import ORMModel
 
 
+class InvoiceItemIn(BaseModel):
+    description: str = Field(min_length=1, max_length=500)
+    quantity: Decimal = Field(default=Decimal("1"), gt=0)
+    unit_price: Decimal = Field(ge=0)
+
+
+class InvoiceItemOut(ORMModel):
+    id: UUID
+    description: str
+    quantity: Decimal
+    unit_price: Decimal
+    amount: Decimal
+
+
 class InvoiceCreate(BaseModel):
     client_id: UUID
-    subtotal: Decimal = Field(gt=0, decimal_places=2)
     due_date: date
+    items: list[InvoiceItemIn] = Field(min_length=1)
     tax_rate: Decimal = Field(default=Decimal("0.18"), ge=0, le=1)
+    place_of_supply: str | None = Field(default=None, max_length=2)
     status: str = "unpaid"
-    payment_link: str | None = None
+    notes: str | None = None
 
 
 class InvoiceUpdate(BaseModel):
-    subtotal: Decimal | None = Field(default=None, gt=0, decimal_places=2)
     due_date: date | None = None
-    tax_rate: Decimal | None = Field(default=None, ge=0, le=1)
     status: str | None = None
+    notes: str | None = None
     payment_link: str | None = None
 
 
@@ -32,8 +46,17 @@ class InvoiceOut(ORMModel):
     invoice_number: str
     subtotal: Decimal
     tax: Decimal
+    cgst: Decimal
+    sgst: Decimal
+    igst: Decimal
+    tax_type: str
+    place_of_supply: str | None
     total: Decimal
     status: str
     due_date: date
+    notes: str | None = None
     payment_link: str | None
+    payment_provider: str | None = None
+    paid_at: datetime | None = None
+    items: list[InvoiceItemOut] = []
     created_at: datetime

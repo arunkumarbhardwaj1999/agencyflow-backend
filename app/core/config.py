@@ -21,9 +21,29 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     rate_limit: str = "100/minute"
 
+    frontend_url: str = "http://localhost:3000"
+    currency: str = "INR"
+
+    # Payments — when no real keys are set, payments run in mock mode so the
+    # full pay → webhook → "paid" flow can be tested locally.
+    payments_mock: bool = True
+    razorpay_key_id: str = ""
+    razorpay_key_secret: str = ""
+    razorpay_webhook_secret: str = ""
+    stripe_secret_key: str = ""
+    stripe_webhook_secret: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def razorpay_enabled(self) -> bool:
+        return bool(self.razorpay_key_id and self.razorpay_key_secret)
+
+    @property
+    def stripe_enabled(self) -> bool:
+        return bool(self.stripe_secret_key)
 
 
 @lru_cache

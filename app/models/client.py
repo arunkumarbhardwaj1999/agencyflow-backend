@@ -24,5 +24,6 @@ class Client(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     address: Mapped[str | None] = mapped_column(Text)
     gst_number: Mapped[str | None] = mapped_column(String(15))
+    state_code: Mapped[str | None] = mapped_column(String(2))
     notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
