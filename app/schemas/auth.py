@@ -35,6 +35,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=20)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 

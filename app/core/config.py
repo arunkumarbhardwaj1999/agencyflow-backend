@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
+    # Google Sign-In (OAuth 2.0 client ID from Google Cloud Console)
+    google_client_id: str = ""
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -44,6 +47,10 @@ class Settings(BaseSettings):
     @property
     def stripe_enabled(self) -> bool:
         return bool(self.stripe_secret_key)
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_client_id)
 
 
 @lru_cache

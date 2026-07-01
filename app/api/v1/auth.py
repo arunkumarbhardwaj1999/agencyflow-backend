@@ -17,6 +17,7 @@ from app.core.security import (
     token_subject_uuid,
     verify_password,
 )
+from app.core.google_auth import GoogleAuthError, verify_google_id_token
 from app.core.plans import get_starter_plan
 from app.db.session import get_db
 from app.models.company import Company
@@ -26,6 +27,7 @@ from app.models.user import User
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    GoogleLoginRequest,
     LoginRequest,
     RefreshRequest,
     RegisterRequest,
@@ -107,6 +109,38 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Account disabled")
+    role_result = await db.execute(select(Role).where(Role.id == user.role_id))
+    role = role_result.scalar_one()
+    access = create_access_token(
+        str(user.id),
+        extra={"company_id": str(user.company_id) if user.company_id else None, "role": role.name},
+    )
+    refresh = create_refresh_token(str(user.id))
+    return TokenResponse(access_token=access, refresh_token=refresh)
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(body: GoogleLoginRequest, db: AsyncSession = Depends(get_db)):
+    try:
+        payload = await verify_google_id_token(body.credential)
+    except GoogleAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    email = payload["email"].lower()
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail="No account found for this Google email. Please register first.",
+        )
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account disabled")
+
+    picture = payload.get("picture")
+    if picture and not user.avatar:
+        user.avatar = picture
+
     role_result = await db.execute(select(Role).where(Role.id == user.role_id))
     role = role_result.scalar_one()
     access = create_access_token(
