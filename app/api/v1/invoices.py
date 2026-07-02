@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, require_permission
+from app.core.email import send_invoice_email
 from app.core.gst import (
     compute_gst,
     resolve_place_of_supply,
@@ -22,6 +23,7 @@ from app.models.company import Company
 from app.models.invoice import Invoice, InvoiceItem
 from app.schemas.common import MessageResponse
 from app.schemas.invoice import InvoiceCreate, InvoiceItemOut, InvoiceOut, InvoiceUpdate
+from app.services.whatsapp_service import notify_invoice_ready
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -268,6 +270,44 @@ async def invoice_pdf(
     invoice = await _get_invoice(db, invoice_id, current.company_id)
     pdf_bytes = await render_invoice_pdf(db, invoice)
     return pdf_response(invoice.invoice_number, pdf_bytes)
+
+
+@router.post("/{invoice_id}/send", response_model=MessageResponse)
+async def send_invoice(
+    invoice_id: UUID,
+    current: CurrentUser = Depends(require_permission("manage_invoices")),
+    db: AsyncSession = Depends(get_db),
+):
+    invoice = await _get_invoice(db, invoice_id, current.company_id)
+    client = await db.get(Client, invoice.client_id)
+    if not client or not client.email:
+        raise HTTPException(status_code=400, detail="Client has no email address")
+
+    company = await db.get(Company, current.company_id)
+    pdf_bytes = await render_invoice_pdf(db, invoice)
+    sent = await send_invoice_email(
+        to=client.email,
+        invoice_number=invoice.invoice_number,
+        company_name=company.company_name if company else "AgencyFlow",
+        pdf_bytes=pdf_bytes,
+        pay_link=invoice.payment_link,
+    )
+    if not sent:
+        raise HTTPException(status_code=502, detail="Could not send the invoice email")
+
+    if client.phone:
+        await notify_invoice_ready(
+            db,
+            company_id=current.company_id,
+            client_id=client.id,
+            client_name=client.business_name,
+            client_phone=client.phone,
+            invoice_number=invoice.invoice_number,
+            amount=str(invoice.total),
+        )
+
+    mode = "sent" if settings.email_enabled else "logged (mock mode — set RESEND_API_KEY to send)"
+    return MessageResponse(message=f"Invoice {invoice.invoice_number} emailed to {client.email} ({mode})")
 
 
 @router.delete("/{invoice_id}", response_model=MessageResponse)

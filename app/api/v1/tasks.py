@@ -6,11 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import CurrentUser, require_company, require_permission
 from app.core.realtime import realtime_manager
+from app.core.whatsapp import render_template
 from app.db.session import get_db
+from app.models.client import Client
 from app.models.project import Project
 from app.models.task import Task
 from app.schemas.common import MessageResponse
 from app.schemas.task import TaskCreate, TaskOut, TaskUpdate
+from app.services.whatsapp_service import enqueue_whatsapp
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
@@ -79,11 +82,16 @@ async def update_task(
     if "priority" in data:
         await _validate_task_fields(task.status, data["priority"])
 
+    old_status = task.status
     for k, v in data.items():
         setattr(task, k, v)
     await db.flush()
     await db.refresh(task)
     await realtime_manager.broadcast(current.company_id, "task", f"Task updated: {task.title} ({task.status})")
+
+    if "status" in data and data["status"] == "done" and old_status != "done":
+        await _maybe_notify_task_done(db, task, current.company_id)
+
     return task
 
 
@@ -121,3 +129,26 @@ async def _get_task(db: AsyncSession, task_id: UUID, current: CurrentUser) -> Ta
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     return task
+
+
+async def _maybe_notify_task_done(db: AsyncSession, task: Task, company_id: UUID) -> None:
+    project = await db.get(Project, task.project_id)
+    if not project:
+        return
+    client = await db.get(Client, project.client_id)
+    if not client or not client.phone:
+        return
+    params = {
+        "name": client.business_name,
+        "project_title": project.title,
+        "detail": f'Task "{task.title}" is complete.',
+    }
+    message = render_template("task_update", **params)
+    enqueue_whatsapp(
+        company_id=company_id,
+        client_id=client.id,
+        phone=client.phone,
+        message=message,
+        template_key="task_update",
+        params=params,
+    )

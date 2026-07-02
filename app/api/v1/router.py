@@ -1,9 +1,11 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    ai,
     auth,
     clients,
     dashboard,
+    files,
     invoices,
     leads,
     payments,
@@ -11,6 +13,7 @@ from app.api.v1 import (
     projects,
     tasks,
     users,
+    whatsapp,
 )
 
 api_router = APIRouter()
@@ -24,3 +27,6 @@ api_router.include_router(invoices.router)
 api_router.include_router(payments.router)
 api_router.include_router(portal.router)
 api_router.include_router(users.router)
+api_router.include_router(files.router)
+api_router.include_router(whatsapp.router)
+api_router.include_router(ai.router)

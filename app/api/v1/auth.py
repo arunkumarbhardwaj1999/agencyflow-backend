@@ -1,12 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from jose import JWTError
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.deps import CurrentUser, get_current_user
+from app.core.email import send_password_reset_email, send_welcome_email
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -36,6 +38,7 @@ from app.schemas.auth import (
 from app.schemas.common import MessageResponse, TokenResponse, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+settings = get_settings()
 
 
 def _user_out(user: User, role_name: str) -> UserOut:
@@ -54,7 +57,11 @@ def _user_out(user: User, role_name: str) -> UserOut:
 
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    body: RegisterRequest,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     slug_exists = await db.execute(select(Company).where(Company.slug == body.slug))
     if slug_exists.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Workspace slug already taken")
@@ -93,6 +100,7 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     )
     db.add(user)
     await db.flush()
+    background.add_task(send_welcome_email, body.email, body.first_name, body.company_name)
     access = create_access_token(
         str(user.id),
         extra={"company_id": str(company.id), "role": "owner"},
@@ -187,7 +195,11 @@ async def me(current: CurrentUser = Depends(get_current_user)):
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
-async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depends(get_db)):
+async def forgot_password(
+    body: ForgotPasswordRequest,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(User).where(User.email == body.email, User.is_active.is_(True)))
     user = result.scalar_one_or_none()
 
@@ -202,10 +214,16 @@ async def forgot_password(body: ForgotPasswordRequest, db: AsyncSession = Depend
                 expires_at=datetime.now(UTC) + timedelta(minutes=30),
             )
         )
+        reset_link = f"{settings.frontend_url}/reset-password?token={reset_token}"
+        background.add_task(send_password_reset_email, user.email, reset_link)
+
+    # In production (email configured) the token is delivered only by email.
+    # In mock mode it's returned so the flow can be tested without a mailbox.
+    expose_token = reset_token if not settings.email_enabled else None
     return ForgotPasswordResponse(
         message="If that email exists, a reset link has been sent.",
-        reset_token=reset_token,
-        email=user.email if user and reset_token else None,
+        reset_token=expose_token,
+        email=user.email if user and expose_token else None,
     )
 
 

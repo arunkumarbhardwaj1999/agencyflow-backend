@@ -19,4 +19,5 @@ class WhatsAppLog(Base):
     phone: Mapped[str] = mapped_column(String(20), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="sent")
+    template_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sent_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

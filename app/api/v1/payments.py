@@ -24,6 +24,7 @@ from app.db.session import get_db
 from app.models.client import Client
 from app.models.invoice import Invoice
 from app.schemas.payment import PaymentLinkRequest, PaymentLinkResponse, WebhookAck
+from app.services.whatsapp_service import notify_invoice_payment_received
 
 router = APIRouter(prefix="/payments", tags=["payments"])
 settings = get_settings()
@@ -38,6 +39,17 @@ async def _mark_paid(db: AsyncSession, invoice: Invoice, payment_id: str | None)
     await realtime_manager.broadcast(
         invoice.company_id, "invoice", f"Invoice {invoice.invoice_number} paid"
     )
+    client = await db.get(Client, invoice.client_id)
+    if client and client.phone:
+        await notify_invoice_payment_received(
+            db,
+            company_id=invoice.company_id,
+            client_id=client.id,
+            client_name=client.business_name,
+            client_phone=client.phone,
+            invoice_number=invoice.invoice_number,
+            amount=str(invoice.total),
+        )
 
 
 async def _invoice_by_order(db: AsyncSession, order_id: str | None) -> Invoice | None:
