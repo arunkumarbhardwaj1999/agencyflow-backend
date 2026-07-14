@@ -23,6 +23,11 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/agencyflow
+    volumes:
+      - ./app:/app/app
+      - ./alembic:/app/alembic
+      - ./scripts:/app/scripts
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -58,3 +63,4 @@ services:
 
 volumes:
   pgdata:
+  uploads:

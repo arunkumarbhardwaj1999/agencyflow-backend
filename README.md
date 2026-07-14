@@ -34,7 +34,7 @@ uvicorn app.main:app --reload
 | Clients | `/api/v1/clients` |
 | Projects | `/api/v1/projects` |
 | Tasks | `/api/v1/tasks` |
-| Dashboard | `/api/v1/dashboard` |
+| Reports | `/api/v1/reports` |
 | Invoices (GST + PDF) | `/api/v1/invoices` |
 | Payments (links + webhooks) | `/api/v1/payments` |
 | Client portal | `/api/v1/portal` |

@@ -11,6 +11,7 @@ from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.limiter import limiter
 from app.core.realtime import realtime_manager
+from app.core.realtime_bus import start_subscriber, stop_subscriber
 from app.core.security import decode_token
 
 settings = get_settings()
@@ -18,7 +19,9 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    await start_subscriber(realtime_manager.relay)
     yield
+    await stop_subscriber()
 
 
 app = FastAPI(
@@ -43,7 +46,33 @@ app.add_middleware(
 @app.get("/health")
 @limiter.limit(settings.rate_limit)
 async def health(request: Request):
-    return {"status": "ok", "app": settings.app_name}
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "integrations": {
+            "email": {
+                "enabled": settings.email_enabled,
+                "provider": settings.email_provider_name,
+                "from": settings.email_from if settings.email_enabled else None,
+                "hint": settings.email_config_hint(),
+            },
+            "whatsapp": {
+                "enabled": settings.whatsapp_enabled,
+                "provider": "meta" if settings.whatsapp_enabled else "mock",
+                "celery_queue": settings.celery_enabled,
+            },
+            "sms": {
+                "enabled": settings.sms_enabled,
+                "provider": settings.sms_provider or "mock",
+            },
+            "payments": {
+                "mock": settings.payments_mock,
+                "razorpay": settings.razorpay_enabled,
+                "stripe": settings.stripe_enabled,
+            },
+            "ai": {"enabled": settings.ai_enabled, "provider": settings.ai_provider},
+        },
+    }
 
 
 @app.websocket("/ws/dashboard/{company_id}")

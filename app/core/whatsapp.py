@@ -199,6 +199,75 @@ async def send_text(phone: str, message: str) -> dict:
     return {"status": "sent", "to": to, "message_id": msg_id, "delivery": "text"}
 
 
+async def send_otp_code(phone: str, code: str, *, recipient_name: str = "there") -> dict:
+    """Send OTP via Meta-approved template (required for delivery in dev/production)."""
+    to = normalize_phone(phone)
+    if not to:
+        raise WhatsAppError("Invalid phone number")
+
+    if not settings.whatsapp_enabled:
+        logger.info("[WHATSAPP MOCK OTP] to=%s code=%s", to, code)
+        return {"status": "mock", "to": to, "message_id": None, "delivery": "otp"}
+
+    template_name = settings.whatsapp_otp_template.strip() or "jaspers_market_order_confirmation_v1"
+    language = settings.whatsapp_otp_template_language or "en_US"
+    url = f"{GRAPH_BASE}/{settings.whatsapp_phone_number_id}/messages"
+
+    if template_name == "jaspers_market_order_confirmation_v1":
+        # Meta sandbox sample — OTP is sent as the "order number" in {{2}}.
+        components = [
+            {
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": recipient_name[:50] or "there"},
+                    {"type": "text", "text": code},
+                    {"type": "text", "text": "10 minutes"},
+                ],
+            }
+        ]
+    elif template_name == "hello_world":
+        components = []
+        language = "en_US"
+    else:
+        # Custom authentication template (body {{1}} + copy-code button).
+        components = [
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": code}],
+            },
+            {
+                "type": "button",
+                "sub_type": "copy_code",
+                "index": "0",
+                "parameters": [{"type": "coupon_code", "coupon_code": code}],
+            },
+        ]
+
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": language},
+            "components": components,
+        },
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            url,
+            headers={"Authorization": f"Bearer {settings.whatsapp_token}"},
+            json=payload,
+            timeout=15.0,
+        )
+    if resp.status_code >= 400:
+        logger.warning("WhatsApp OTP template failed (%s): %s", resp.status_code, resp.text)
+        raise WhatsAppError(f"WhatsApp API error: {resp.text[:200]}")
+    data = resp.json()
+    msg_id = data.get("messages", [{}])[0].get("id")
+    return {"status": "sent", "to": to, "message_id": msg_id, "delivery": "otp_template"}
+
+
 async def send_message(
     *,
     phone: str,

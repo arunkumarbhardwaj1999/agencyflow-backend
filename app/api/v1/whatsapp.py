@@ -1,7 +1,7 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -139,6 +139,52 @@ async def send_message(
     return WhatsAppSendResponse(
         status=log.status, phone=phone, message=text, log_id=log.id, queued=False
     )
+
+
+@router.get("/webhook")
+async def whatsapp_webhook_verify(
+    hub_mode: str = Query(alias="hub.mode", default=""),
+    hub_verify_token: str = Query(alias="hub.verify_token", default=""),
+    hub_challenge: str = Query(alias="hub.challenge", default=""),
+):
+    """Meta webhook verification (subscribe in Meta Developer Console)."""
+    if hub_mode == "subscribe" and hub_verify_token == settings.whatsapp_webhook_verify_token:
+        return int(hub_challenge)
+    raise HTTPException(status_code=403, detail="Verification failed")
+
+
+@router.post("/webhook")
+async def whatsapp_webhook_receive(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Receive inbound WhatsApp messages from Meta Cloud API."""
+    payload = await request.json()
+    for entry in payload.get("entry", []):
+        for change in entry.get("changes", []):
+            value = change.get("value", {})
+            for msg in value.get("messages", []):
+                from_phone = normalize_phone(msg.get("from", ""))
+                text = msg.get("text", {}).get("body", "") or f"[{msg.get('type', 'message')}]"
+                client_result = await db.execute(select(Client).where(Client.phone.isnot(None)))
+                matched = None
+                for client in client_result.scalars():
+                    if client.phone and normalize_phone(client.phone) == from_phone:
+                        matched = client
+                        break
+                if not matched:
+                    continue
+                db.add(
+                    WhatsAppLog(
+                        company_id=matched.company_id,
+                        client_id=matched.id,
+                        phone=from_phone,
+                        message=text,
+                        status="inbound",
+                    )
+                )
+    await db.flush()
+    return {"status": "ok"}
 
 
 @router.post("/invoices/{invoice_id}/notify", response_model=WhatsAppSendResponse)

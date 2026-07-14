@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 from fastapi import WebSocket
 
+from app.core.realtime_bus import publish_event
+
 
 class RealtimeManager:
     def __init__(self) -> None:
@@ -31,14 +33,26 @@ class RealtimeManager:
         }
         key = str(company_id)
         self._recent_events[key].appendleft(payload)
+        await self._send_local(key, payload)
+        await publish_event(key, payload)
+
+    async def relay(self, company_id: str, payload: dict) -> None:
+        """Deliver an event received from Redis to local WebSocket clients."""
+        key = str(company_id)
+        self._recent_events[key].appendleft(payload)
+        await self._send_local(key, payload)
+
+    async def _send_local(self, key: str, payload: dict) -> None:
         dead_connections: list[WebSocket] = []
         for ws in self._connections.get(key, set()):
             try:
                 await ws.send_json(payload)
             except Exception:
                 dead_connections.append(ws)
-        for ws in dead_connections:
-            self.disconnect(company_id, ws)
+        if dead_connections:
+            company_id = UUID(key)
+            for ws in dead_connections:
+                self.disconnect(company_id, ws)
 
     def recent(self, company_id: UUID, limit: int = 5) -> list[dict]:
         return list(self._recent_events[str(company_id)])[:limit]

@@ -1,7 +1,9 @@
-"""AI helpers powered by Anthropic Claude.
+"""AI helpers — OpenAI (default), optional Gemini / Anthropic.
 
-When ANTHROPIC_API_KEY is not set, returns deterministic mock drafts built from
-CRM context so features can be tested without an API account.
+Same pattern as One World 3D: keys only on backend .env, never frontend.
+Provider via AI_LLM_PROVIDER=openai|gemini|anthropic|auto|mock
+Default model: OPENAI_MODEL=gpt-4o-mini
+Without any key → deterministic mock drafts from CRM context.
 """
 
 from __future__ import annotations
@@ -17,64 +19,213 @@ from app.core.config import get_settings
 logger = logging.getLogger("agencyflow.ai")
 settings = get_settings()
 
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
 
 class AIError(Exception):
     pass
 
 
-async def complete(system: str, user_prompt: str, max_tokens: int = 1024) -> str:
-    if not settings.ai_enabled:
-        return _mock_complete(user_prompt)
+async def _openai_complete(system: str, user_prompt: str, max_tokens: int) -> str:
+    payload = {
+        "model": settings.openai_model,
+        "max_tokens": max_tokens,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OPENAI_URL,
+            headers={
+                "authorization": f"Bearer {settings.openai_api_key}",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=60.0,
+        )
+    if resp.status_code >= 400:
+        logger.warning("OpenAI API error (%s): %s", resp.status_code, resp.text[:300])
+        raise AIError("AI service returned an error")
+    data = resp.json()
+    choices = data.get("choices", [])
+    if not choices:
+        return "No response generated."
+    text = choices[0].get("message", {}).get("content", "")
+    return (text or "").strip() or "No response generated."
 
+
+async def _gemini_complete(system: str, user_prompt: str, max_tokens: int) -> str:
+    url = f"{GEMINI_BASE}/{settings.gemini_model}:generateContent"
+    payload = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {"maxOutputTokens": max_tokens},
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            url,
+            headers={"content-type": "application/json"},
+            params={"key": settings.gemini_api_key},
+            json=payload,
+            timeout=60.0,
+        )
+    if resp.status_code >= 400:
+        logger.warning("Gemini API error (%s): %s", resp.status_code, resp.text[:300])
+        raise AIError("AI service returned an error")
+    data = resp.json()
+    candidates = data.get("candidates", [])
+    if not candidates:
+        return "No response generated."
+    parts = candidates[0].get("content", {}).get("parts", [])
+    text = "".join(p.get("text", "") for p in parts)
+    return text.strip() or "No response generated."
+
+
+async def _anthropic_complete(system: str, user_prompt: str, max_tokens: int) -> str:
     payload = {
         "model": settings.anthropic_model,
         "max_tokens": max_tokens,
         "system": system,
         "messages": [{"role": "user", "content": user_prompt}],
     }
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key": settings.anthropic_api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=60.0,
+        )
+    if resp.status_code >= 400:
+        logger.warning("Claude API error (%s): %s", resp.status_code, resp.text[:300])
+        raise AIError("AI service returned an error")
+    data = resp.json()
+    blocks = data.get("content", [])
+    text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
+    return text.strip() or "No response generated."
+
+
+async def complete(system: str, user_prompt: str, max_tokens: int = 1024) -> str:
+    provider = settings.ai_provider
+    if provider == "mock":
+        return _mock_complete(user_prompt)
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                ANTHROPIC_URL,
-                headers={
-                    "x-api-key": settings.anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json=payload,
-                timeout=60.0,
-            )
-        if resp.status_code >= 400:
-            logger.warning("Claude API error (%s): %s", resp.status_code, resp.text[:300])
-            raise AIError("AI service returned an error")
-        data = resp.json()
-        blocks = data.get("content", [])
-        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text")
-        return text.strip() or "No response generated."
+        if provider == "openai":
+            return await _openai_complete(system, user_prompt, max_tokens)
+        if provider == "gemini":
+            return await _gemini_complete(system, user_prompt, max_tokens)
+        return await _anthropic_complete(system, user_prompt, max_tokens)
     except AIError:
         raise
     except Exception as exc:
-        logger.warning("Claude request failed: %s", exc)
+        logger.warning("AI request failed: %s", exc)
         raise AIError("AI service unavailable") from exc
 
 
-async def stream_complete(
-    system: str, user_prompt: str, max_tokens: int = 1024
-) -> AsyncIterator[str]:
-    """Yield text chunks. Mock mode simulates streaming by word batches."""
-    if not settings.ai_enabled:
-        text = _mock_complete(user_prompt)
-        words = text.split(" ")
-        chunk = ""
-        for i, word in enumerate(words):
-            chunk += (" " if i else "") + word
-            if len(chunk) > 40 or i == len(words) - 1:
-                yield chunk
-                chunk = ""
-        return
+async def _mock_stream(user_prompt: str) -> AsyncIterator[str]:
+    text = _mock_complete(user_prompt)
+    words = text.split(" ")
+    chunk = ""
+    for i, word in enumerate(words):
+        chunk += (" " if i else "") + word
+        if len(chunk) > 40 or i == len(words) - 1:
+            yield chunk
+            chunk = ""
 
+
+async def _openai_stream(
+    system: str, user_prompt: str, max_tokens: int
+) -> AsyncIterator[str]:
+    payload = {
+        "model": settings.openai_model,
+        "max_tokens": max_tokens,
+        "stream": True,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": user_prompt},
+        ],
+    }
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "POST",
+            OPENAI_URL,
+            headers={
+                "authorization": f"Bearer {settings.openai_api_key}",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=90.0,
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                logger.warning("OpenAI stream error (%s): %s", resp.status_code, body[:300])
+                raise AIError("AI service returned an error")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                raw = line[6:].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                for choice in event.get("choices", []):
+                    delta = choice.get("delta", {})
+                    text = delta.get("content", "")
+                    if text:
+                        yield text
+
+
+async def _gemini_stream(
+    system: str, user_prompt: str, max_tokens: int
+) -> AsyncIterator[str]:
+    url = f"{GEMINI_BASE}/{settings.gemini_model}:streamGenerateContent"
+    payload = {
+        "system_instruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": user_prompt}]}],
+        "generationConfig": {"maxOutputTokens": max_tokens},
+    }
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "POST",
+            url,
+            headers={"content-type": "application/json"},
+            params={"key": settings.gemini_api_key, "alt": "sse"},
+            json=payload,
+            timeout=90.0,
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                logger.warning("Gemini stream error (%s): %s", resp.status_code, body[:300])
+                raise AIError("AI service returned an error")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                raw = line[6:].strip()
+                if not raw or raw == "[DONE]":
+                    continue
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                for cand in event.get("candidates", []):
+                    for part in cand.get("content", {}).get("parts", []):
+                        text = part.get("text", "")
+                        if text:
+                            yield text
+
+
+async def _anthropic_stream(
+    system: str, user_prompt: str, max_tokens: int
+) -> AsyncIterator[str]:
     payload = {
         "model": settings.anthropic_model,
         "max_tokens": max_tokens,
@@ -82,42 +233,63 @@ async def stream_complete(
         "system": system,
         "messages": [{"role": "user", "content": user_prompt}],
     }
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "POST",
+            ANTHROPIC_URL,
+            headers={
+                "x-api-key": settings.anthropic_api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json=payload,
+            timeout=90.0,
+        ) as resp:
+            if resp.status_code >= 400:
+                body = await resp.aread()
+                logger.warning("Claude stream error (%s): %s", resp.status_code, body[:300])
+                raise AIError("AI service returned an error")
+            async for line in resp.aiter_lines():
+                if not line.startswith("data: "):
+                    continue
+                raw = line[6:].strip()
+                if raw == "[DONE]":
+                    break
+                try:
+                    event = json.loads(raw)
+                except json.JSONDecodeError:
+                    continue
+                if event.get("type") == "content_block_delta":
+                    delta = event.get("delta", {})
+                    text = delta.get("text", "")
+                    if text:
+                        yield text
+
+
+async def stream_complete(
+    system: str, user_prompt: str, max_tokens: int = 1024
+) -> AsyncIterator[str]:
+    """Yield text chunks. Mock mode simulates streaming by word batches."""
+    provider = settings.ai_provider
+    if provider == "mock":
+        async for chunk in _mock_stream(user_prompt):
+            yield chunk
+        return
+
     try:
-        async with httpx.AsyncClient() as client:
-            async with client.stream(
-                "POST",
-                ANTHROPIC_URL,
-                headers={
-                    "x-api-key": settings.anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json=payload,
-                timeout=90.0,
-            ) as resp:
-                if resp.status_code >= 400:
-                    body = await resp.aread()
-                    logger.warning("Claude stream error (%s): %s", resp.status_code, body[:300])
-                    raise AIError("AI service returned an error")
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data: "):
-                        continue
-                    raw = line[6:].strip()
-                    if raw == "[DONE]":
-                        break
-                    try:
-                        event = json.loads(raw)
-                    except json.JSONDecodeError:
-                        continue
-                    if event.get("type") == "content_block_delta":
-                        delta = event.get("delta", {})
-                        text = delta.get("text", "")
-                        if text:
-                            yield text
+        if provider == "openai":
+            async for chunk in _openai_stream(system, user_prompt, max_tokens):
+                yield chunk
+        elif provider == "gemini":
+            async for chunk in _gemini_stream(system, user_prompt, max_tokens):
+                yield chunk
+        else:
+            async for chunk in _anthropic_stream(system, user_prompt, max_tokens):
+                yield chunk
     except AIError:
         raise
     except Exception as exc:
-        logger.warning("Claude stream failed: %s", exc)
+        logger.warning("%s stream failed: %s", provider, exc)
         raise AIError("AI service unavailable") from exc
 
 
@@ -162,7 +334,7 @@ def _mock_complete(prompt: str) -> str:
             "- Status: In progress with active tasks on the board.\n"
             "- Next steps: Complete pending deliverables and schedule a client review.\n"
             "- Risk: Monitor deadlines on open tasks.\n\n"
-            "_Connect ANTHROPIC_API_KEY for live AI summaries._"
+            "_Set OPENAI_API_KEY for live AI summaries._"
         )
     if "follow" in lower:
         return (
@@ -170,7 +342,7 @@ def _mock_complete(prompt: str) -> str:
             "- Proposal-stage leads — confirm decision timeline.\n"
             "- New leads from this week — send intro email within 24h."
         )
-    return "AI mock response — set ANTHROPIC_API_KEY for live Claude output."
+    return "AI mock response — set OPENAI_API_KEY for live ChatGPT output."
 
 
 async def draft_lead_email(
@@ -300,3 +472,118 @@ async def suggest_followups(
         f"Suggest 3–5 follow-up actions for today, prioritizing overdue follow-ups."
     )
     return await complete(system, prompt)
+
+
+async def draft_proposal_content(
+    *,
+    prompt: str,
+    template_key: str,
+    template_label: str,
+    client_name: str,
+    project_value: float,
+    services: list[str],
+    agency_name: str,
+) -> dict:
+    """Generate structured proposal sections (live LLM or mock)."""
+    value_str = f"₹{project_value:,.0f}" if project_value else "To be confirmed"
+    services_line = ", ".join(services) if services else "As discussed"
+    system = (
+        "You write professional agency proposals for Indian digital agencies. "
+        "Return ONLY valid JSON with keys: title, project_value (number), services (array of strings), "
+        "overview, timeline, deliverables, scope, pricing, terms, conclusion. "
+        "Use INR (₹) for money. Keep each section 2–5 sentences or bullet lines."
+    )
+    user_prompt = (
+        f"Agency: {agency_name}\n"
+        f"Client: {client_name}\n"
+        f"Template: {template_label} ({template_key})\n"
+        f"Suggested value: {value_str}\n"
+        f"Services: {services_line}\n\n"
+        f"User request: {prompt}\n\n"
+        "Draft a complete proposal as JSON."
+    )
+
+    if settings.ai_provider == "mock" or not settings.ai_enabled:
+        return _mock_proposal_draft(
+            prompt=prompt,
+            template_label=template_label,
+            client_name=client_name,
+            project_value=project_value,
+            services=services,
+            agency_name=agency_name,
+        )
+
+    raw = await complete(system, user_prompt, max_tokens=2048)
+    try:
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            data = json.loads(raw[start:end])
+            return {
+                "title": str(data.get("title") or f"{template_label} Proposal — {client_name}"),
+                "project_value": float(data.get("project_value") or project_value or 0),
+                "services": list(data.get("services") or services),
+                "overview": str(data.get("overview") or ""),
+                "timeline": str(data.get("timeline") or ""),
+                "deliverables": str(data.get("deliverables") or ""),
+                "scope": str(data.get("scope") or ""),
+                "pricing": str(data.get("pricing") or ""),
+                "terms": str(data.get("terms") or ""),
+                "conclusion": str(data.get("conclusion") or ""),
+            }
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.warning("Proposal AI returned non-JSON; using mock draft")
+
+    return _mock_proposal_draft(
+        prompt=prompt,
+        template_label=template_label,
+        client_name=client_name,
+        project_value=project_value,
+        services=services,
+        agency_name=agency_name,
+    )
+
+
+def _mock_proposal_draft(
+    *,
+    prompt: str,
+    template_label: str,
+    client_name: str,
+    project_value: float,
+    services: list[str],
+    agency_name: str,
+) -> dict:
+    value = project_value or 250000
+    svc = services or ["Website", "SEO", "Hosting"]
+    return {
+        "title": f"{template_label} Proposal — {client_name}",
+        "project_value": float(value),
+        "services": svc,
+        "overview": (
+            f"{agency_name} is pleased to submit this {template_label.lower()} proposal for {client_name}. "
+            f"Based on your brief — \"{prompt[:120]}\" — we will deliver a modern solution aligned with your goals."
+        ),
+        "timeline": (
+            "- Week 1–2: Discovery, wireframes, and content planning\n"
+            "- Week 3–5: Design and development\n"
+            "- Week 6: QA, launch, and handover"
+        ),
+        "deliverables": (
+            "- Responsive website or campaign assets\n"
+            "- SEO setup and analytics dashboard\n"
+            "- Training session and documentation"
+        ),
+        "scope": (
+            "Includes strategy, design, implementation, and two rounds of revisions. "
+            "Third-party licenses and ad spend are excluded unless noted."
+        ),
+        "pricing": f"Total project investment: ₹{value:,.0f} (exclusive of GST). 50% advance, 50% on delivery.",
+        "terms": (
+            "Work begins after advance payment. Timeline assumes timely feedback from the client. "
+            "Intellectual property transfers on final payment."
+        ),
+        "conclusion": (
+            f"We look forward to partnering with {client_name}. "
+            "Reply to approve or schedule a call to fine-tune the scope."
+        ),
+    }

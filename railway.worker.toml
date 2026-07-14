@@ -1,0 +1,7 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "celery -A app.celery_app worker --loglevel=info -Q whatsapp"
+restartPolicyType = "ON_FAILURE"

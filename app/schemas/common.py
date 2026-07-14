@@ -23,9 +23,11 @@ class UserOut(ORMModel):
     company_id: UUID | None
     first_name: str
     last_name: str | None
+    username: str
     email: str
     phone: str | None
     role: str
     is_active: bool
     is_verified: bool
+    must_change_password: bool
     created_at: datetime

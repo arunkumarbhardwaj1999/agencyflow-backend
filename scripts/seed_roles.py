@@ -1,4 +1,7 @@
-"""Seed default roles. Run: python -m scripts.seed_roles"""
+"""Seed default roles. Run: python -m scripts.seed_roles
+
+Updates permissions on existing roles so drift stays in sync with ROLE_PERMISSIONS.
+"""
 import asyncio
 
 from sqlalchemy import select
@@ -12,11 +15,13 @@ async def seed() -> None:
     async with AsyncSessionLocal() as db:
         for name, permissions in ROLE_PERMISSIONS.items():
             existing = await db.execute(select(Role).where(Role.name == name))
-            if existing.scalar_one_or_none():
-                continue
-            db.add(Role(name=name, permissions=permissions))
+            role = existing.scalar_one_or_none()
+            if role:
+                role.permissions = permissions
+            else:
+                db.add(Role(name=name, permissions=permissions))
         await db.commit()
-        print("Roles seeded:", ", ".join(ROLE_PERMISSIONS.keys()))
+        print("Roles seeded/updated:", ", ".join(ROLE_PERMISSIONS.keys()))
 
 
 if __name__ == "__main__":
