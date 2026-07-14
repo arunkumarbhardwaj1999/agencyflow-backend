@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import storage
@@ -11,6 +11,7 @@ from app.db.session import get_db
 from app.models.company import Company
 from app.models.document import Document
 from app.models.project import Project
+from app.models.task import Task
 from app.schemas.common import MessageResponse
 from app.schemas.document import DocumentOut, LogoOut
 
@@ -40,12 +41,25 @@ def _doc_out(doc: Document) -> DocumentOut:
         id=doc.id,
         project_id=doc.project_id,
         invoice_id=doc.invoice_id,
+        lead_id=doc.lead_id,
+        deal_id=doc.deal_id,
         filename=doc.filename,
         content_type=doc.content_type,
         size=doc.size,
         kind=doc.kind,
         created_at=doc.created_at,
     )
+
+
+@router.get("/logo", response_model=LogoOut)
+async def get_logo(
+    current: CurrentUser = Depends(require_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    company = await db.get(Company, current.company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return LogoOut(logo=company.logo)
 
 
 @router.post("/logo", response_model=LogoOut)
@@ -87,6 +101,8 @@ async def upload_document(
         )
         if not result.scalar_one_or_none():
             raise HTTPException(status_code=404, detail="Project not found")
+        if current.role_name == "employee" and not current.can("manage_projects"):
+            await _ensure_employee_project(db, current, project_id)
 
     data = await _read_upload(file)
     content_type = file.content_type or storage.guess_content_type(file.filename or "")
@@ -120,7 +136,15 @@ async def list_documents(
         .order_by(Document.created_at.desc())
     )
     if project_id is not None:
+        if current.role_name == "employee" and not current.can("manage_projects"):
+            await _ensure_employee_project(db, current, project_id)
         q = q.where(Document.project_id == project_id)
+    elif current.role_name == "employee" and not current.can("manage_projects"):
+        assigned = await _assigned_project_ids(db, current.company_id, current.id)
+        if assigned:
+            q = q.where(or_(Document.project_id.in_(assigned), Document.uploaded_by == current.id))
+        else:
+            q = q.where(Document.uploaded_by == current.id)
     result = await db.execute(q)
     return [_doc_out(d) for d in result.scalars().all()]
 
@@ -135,6 +159,31 @@ async def _get_document(db: AsyncSession, doc_id: UUID, company_id) -> Document:
     return doc
 
 
+async def _assigned_project_ids(db: AsyncSession, company_id: UUID, user_id: UUID) -> set[UUID]:
+    result = await db.execute(
+        select(Task.project_id)
+        .where(Task.company_id == company_id, Task.assigned_to == user_id)
+        .distinct()
+    )
+    return set(result.scalars().all())
+
+
+async def _ensure_employee_project(db: AsyncSession, current: CurrentUser, project_id: UUID) -> None:
+    assigned = await _assigned_project_ids(db, current.company_id, current.id)
+    if project_id not in assigned:
+        raise HTTPException(status_code=403, detail="You can only access documents for assigned projects")
+
+
+async def _ensure_document_access(db: AsyncSession, current: CurrentUser, doc: Document) -> None:
+    if current.role_name != "employee" or current.can("manage_projects"):
+        return
+    if doc.uploaded_by == current.id:
+        return
+    if doc.project_id and doc.project_id in await _assigned_project_ids(db, current.company_id, current.id):
+        return
+    raise HTTPException(status_code=403, detail="You do not have access to this document")
+
+
 @router.get("/documents/{doc_id}/download")
 async def download_document(
     doc_id: UUID,
@@ -142,6 +191,7 @@ async def download_document(
     db: AsyncSession = Depends(get_db),
 ):
     doc = await _get_document(db, doc_id, current.company_id)
+    await _ensure_document_access(db, current, doc)
     try:
         data = await storage.load(doc.storage_key)
     except FileNotFoundError:
@@ -160,6 +210,7 @@ async def delete_document(
     db: AsyncSession = Depends(get_db),
 ):
     doc = await _get_document(db, doc_id, current.company_id)
+    await _ensure_document_access(db, current, doc)
     await storage.delete(doc.storage_key)
     await db.delete(doc)
     return MessageResponse(message="Document deleted")

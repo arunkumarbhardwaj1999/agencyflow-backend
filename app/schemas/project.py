@@ -13,6 +13,7 @@ class ProjectCreate(BaseModel):
     description: str | None = None
     status: str = "planning"
     budget: Decimal = Decimal("0")
+    estimated_hours: Decimal = Decimal("0")
     start_date: date | None = None
     end_date: date | None = None
 
@@ -22,6 +23,7 @@ class ProjectUpdate(BaseModel):
     description: str | None = None
     status: str | None = None
     budget: Decimal | None = None
+    estimated_hours: Decimal | None = None
     start_date: date | None = None
     end_date: date | None = None
     client_id: UUID | None = None
@@ -35,6 +37,7 @@ class ProjectOut(ORMModel):
     description: str | None
     status: str
     budget: Decimal
+    estimated_hours: Decimal = Decimal("0")
     start_date: date | None
     end_date: date | None
     created_by: UUID | None

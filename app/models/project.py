@@ -20,6 +20,7 @@ class Project(Base):
     description: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(50), default="planning")
     budget: Mapped[float] = mapped_column(Numeric(12, 2), default=0)
+    estimated_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0)
     start_date: Mapped[date | None] = mapped_column(Date)
     end_date: Mapped[date | None] = mapped_column(Date)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
