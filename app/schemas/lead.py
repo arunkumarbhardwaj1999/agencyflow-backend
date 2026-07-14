@@ -18,6 +18,7 @@ class LeadCreate(BaseModel):
     notes: str | None = None
     next_followup: datetime | None = None
     assigned_user_id: UUID | None = None
+    ignore_duplicates: bool = False
 
 
 class LeadUpdate(BaseModel):
@@ -31,6 +32,7 @@ class LeadUpdate(BaseModel):
     notes: str | None = None
     next_followup: datetime | None = None
     assigned_user_id: UUID | None = None
+    ignore_duplicates: bool = False
 
 
 class LeadOut(ORMModel):
