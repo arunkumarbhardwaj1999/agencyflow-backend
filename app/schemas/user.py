@@ -6,6 +6,23 @@ from pydantic import BaseModel, EmailStr, Field
 from app.schemas.common import ORMModel
 
 
+class StaffInviteRequest(BaseModel):
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    email: EmailStr
+    phone: str | None = Field(default=None, max_length=20)
+    role: str = Field(pattern=r"^(manager|employee|client)$")
+
+
+class StaffInviteResponse(BaseModel):
+    id: UUID
+    email: str
+    invite_token: str | None = None
+    email_sent: bool = False
+    email_error: str | None = None
+    message: str
+
+
 class StaffCreateRequest(BaseModel):
     first_name: str = Field(min_length=1, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
@@ -41,3 +58,24 @@ class MemberOut(BaseModel):
     name: str
     email: str
     role: str
+
+
+class GroupCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    member_ids: list[UUID] = Field(default_factory=list)
+
+
+class GroupMemberOut(BaseModel):
+    id: UUID
+    name: str
+    email: str
+    status: str
+
+
+class GroupOut(BaseModel):
+    id: UUID
+    name: str
+    members_count: int
+    users_count: int
+    roles_count: int
+    members: list[GroupMemberOut] = Field(default_factory=list)
