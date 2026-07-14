@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.automation_engine import fire_trigger
 from app.core.config import get_settings
 from app.core.deps import CurrentUser, require_permission
 from app.core.email import send_invoice_email
@@ -207,6 +208,15 @@ async def update_invoice(
 
     await db.flush()
     await db.refresh(invoice, attribute_names=["items"])
+    if data.get("status") == "paid":
+        await fire_trigger(
+            db,
+            company_id=current.company_id,
+            trigger_key="invoice_paid",
+            entity_type="invoice",
+            entity_id=invoice.id,
+            context={"invoice_number": invoice.invoice_number},
+        )
     await realtime_manager.broadcast(
         current.company_id, "invoice", f"Invoice {invoice.invoice_number} updated"
     )

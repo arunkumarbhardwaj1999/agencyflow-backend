@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.automation_engine import fire_trigger
 from app.core.deps import CurrentUser, require_company, require_permission
 from app.core.realtime import realtime_manager
 from app.core.whatsapp import render_template
@@ -27,6 +28,8 @@ async def list_tasks(
     current: CurrentUser = Depends(require_company),
     db: AsyncSession = Depends(get_db),
 ):
+    if current.role_name == "client":
+        raise HTTPException(status_code=403, detail="Use the client portal for your tasks")
     q = select(Task).where(Task.company_id == current.company_id).order_by(Task.created_at.desc())
     if project_id:
         q = q.where(Task.project_id == project_id)
@@ -91,6 +94,14 @@ async def update_task(
 
     if "status" in data and data["status"] == "done" and old_status != "done":
         await _maybe_notify_task_done(db, task, current.company_id)
+        await fire_trigger(
+            db,
+            company_id=current.company_id,
+            trigger_key="task_completed",
+            entity_type="task",
+            entity_id=task.id,
+            context={"project_id": str(task.project_id), "name": task.title},
+        )
 
     return task
 
@@ -122,12 +133,17 @@ async def _ensure_project(db: AsyncSession, project_id: UUID, company_id: UUID) 
 
 
 async def _get_task(db: AsyncSession, task_id: UUID, current: CurrentUser) -> Task:
+    if current.role_name == "client":
+        raise HTTPException(status_code=403, detail="Use the client portal for your tasks")
     result = await db.execute(
         select(Task).where(Task.id == task_id, Task.company_id == current.company_id)
     )
     task = result.scalar_one_or_none()
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+    if current.role_name == "employee" and not current.can("manage_tasks"):
+        if task.assigned_to != current.id:
+            raise HTTPException(status_code=403, detail="You can only view assigned tasks")
     return task
 
 
