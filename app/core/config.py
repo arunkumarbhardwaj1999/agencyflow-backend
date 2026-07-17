@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -170,13 +171,23 @@ class Settings(BaseSettings):
 
     # Background jobs (Celery + Redis). Leave empty to disable Redis (e.g. PythonAnywhere).
     # Falls back to in-process async when Redis is unavailable.
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = ""
     whatsapp_auto_on_payment: bool = True
     whatsapp_auto_on_invoice_send: bool = True
     whatsapp_template_language: str = "en"
     # Meta template for signup OTP. Default uses Meta sandbox sample (order number = OTP).
     whatsapp_otp_template: str = "jaspers_market_order_confirmation_v1"
     whatsapp_otp_template_language: str = "en_US"
+
+    @field_validator("redis_url", mode="before")
+    @classmethod
+    def empty_redis_is_disabled(cls, value: object) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if text.lower() in ("none", "disabled", "false", "0"):
+            return ""
+        return text
 
     @property
     def whatsapp_enabled(self) -> bool:
