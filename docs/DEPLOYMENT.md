@@ -108,6 +108,59 @@ Or use another port for a quick test:
 uvicorn app.main:app --host 0.0.0.0 --port 8001
 ```
 
-### Public URL on PythonAnywhere
+### Public URL on PythonAnywhere (required for Vercel)
 
-Console `uvicorn` on port 8000 is mainly for testing. For a public site, use the **Web** tab (ASGI/WSGI) or an Always-on task (paid). Free tier cannot expose arbitrary ports to the internet the same way Railway/Vercel do.
+Console `uvicorn --port 8001` is **only local to that console**. Vercel cannot reach it.
+That is why the live site shows **Failed to fetch** — `https://aastha282002.pythonanywhere.com` currently returns **404**.
+
+You must create an **ASGI website** with the `pa` tool:
+
+1. Account → **API token** → Create  
+   https://www.pythonanywhere.com/account/#api_token
+
+2. In a **new** Bash console:
+
+```bash
+pip install --upgrade pythonanywhere
+
+# Find your real venv path (one of these usually works):
+ls ~/.virtualenvs/
+which uvicorn
+
+# Set CORS + frontend for Vercel (edit .env)
+cd ~/agencyflow-backend
+nano .env
+```
+
+Put these lines in `.env` (adjust if needed):
+
+```bash
+REDIS_URL=
+CORS_ORIGINS=https://agencyflow-frontend-lac.vercel.app,http://localhost:3000
+FRONTEND_URL=https://agencyflow-frontend-lac.vercel.app
+BACKEND_PUBLIC_URL=https://aastha282002.pythonanywhere.com
+```
+
+3. Create the public ASGI site (replace venv path if different):
+
+```bash
+# If venv is ~/.virtualenvs/agencyenv :
+pa website create --domain aastha282002.pythonanywhere.com --command '/home/Aastha282002/.virtualenvs/agencyenv/bin/uvicorn --app-dir /home/Aastha282002/agencyflow-backend --uds ${DOMAIN_SOCKET} app.main:app'
+```
+
+If `agencyenv` is not under `.virtualenvs`, first run `which uvicorn` and use that path instead of `/home/Aastha282002/.virtualenvs/agencyenv/bin/uvicorn`.
+
+4. Test in browser:
+
+```text
+https://aastha282002.pythonanywhere.com/health
+```
+
+Must show `{"status":"ok",...}`. Then reload the Vercel register page.
+
+5. After code updates:
+
+```bash
+cd ~/agencyflow-backend && git pull origin main
+pa website reload --domain aastha282002.pythonanywhere.com
+```
