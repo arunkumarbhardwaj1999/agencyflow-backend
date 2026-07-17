@@ -20,7 +20,7 @@ async def get_redis():
     global _redis
     if _redis is not None:
         return _redis
-    if not settings.redis_url:
+    if not settings.redis_enabled:
         return None
     try:
         import redis.asyncio as aioredis
@@ -29,7 +29,8 @@ async def get_redis():
         await _redis.ping()
         return _redis
     except Exception as exc:
-        logger.warning("Redis unavailable for realtime bus: %s", exc)
+        logger.info("Redis optional — realtime bus offline (%s)", exc)
+        _redis = None
         return None
 
 

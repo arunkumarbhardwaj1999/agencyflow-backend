@@ -75,3 +75,39 @@ Both repos include `.github/workflows/ci.yml` — runs on push/PR to `main` and 
 `GET /health` → `{"status":"ok"}`
 
 Railway uses this via `railway.toml`.
+
+## PythonAnywhere (API only)
+
+PythonAnywhere free accounts do **not** run Redis. Set this in your `.env`:
+
+```bash
+REDIS_URL=
+```
+
+(or `REDIS_URL=disabled`)
+
+The API still works — WhatsApp queue and cross-server WebSockets fall back to in-process mode.
+
+### Port already in use (`address already in use`)
+
+Something is already listening on 8000. Free it, then restart:
+
+```bash
+cd ~/agencyflow-backend
+source ~/agencyenv/bin/activate   # your venv name may differ
+fuser -k 8000/tcp                 # kill whatever holds port 8000
+# if fuser is missing:
+#   ps aux | grep uvicorn
+#   kill <PID>
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+Or use another port for a quick test:
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 8001
+```
+
+### Public URL on PythonAnywhere
+
+Console `uvicorn` on port 8000 is mainly for testing. For a public site, use the **Web** tab (ASGI/WSGI) or an Always-on task (paid). Free tier cannot expose arbitrary ports to the internet the same way Railway/Vercel do.

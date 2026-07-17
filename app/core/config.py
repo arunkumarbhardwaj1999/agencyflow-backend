@@ -168,7 +168,8 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.0-flash"
 
-    # Background jobs (Celery + Redis). Falls back to in-process async when Redis is unavailable.
+    # Background jobs (Celery + Redis). Leave empty to disable Redis (e.g. PythonAnywhere).
+    # Falls back to in-process async when Redis is unavailable.
     redis_url: str = "redis://localhost:6379/0"
     whatsapp_auto_on_payment: bool = True
     whatsapp_auto_on_invoice_send: bool = True
@@ -208,7 +209,12 @@ class Settings(BaseSettings):
 
     @property
     def celery_enabled(self) -> bool:
-        return bool(self.redis_url)
+        url = (self.redis_url or "").strip().lower()
+        return bool(url) and url not in ("", "none", "disabled", "false", "0")
+
+    @property
+    def redis_enabled(self) -> bool:
+        return self.celery_enabled
 
 
 @lru_cache
