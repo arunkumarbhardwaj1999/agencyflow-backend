@@ -1,5 +1,6 @@
 from collections import defaultdict, deque
-from datetime import UTC, datetime
+from datetime import datetime
+from app.core.utc import UTC
 from uuid import UUID, uuid4
 
 from fastapi import WebSocket

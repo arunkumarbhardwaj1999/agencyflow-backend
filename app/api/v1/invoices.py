@@ -1,4 +1,5 @@
-from datetime import UTC, datetime
+from datetime import datetime
+from app.core.utc import UTC
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 

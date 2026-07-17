@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from app.core.utc import UTC
 import secrets
 from uuid import UUID
 

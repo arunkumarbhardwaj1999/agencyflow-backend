@@ -1,4 +1,5 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from app.core.utc import UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status

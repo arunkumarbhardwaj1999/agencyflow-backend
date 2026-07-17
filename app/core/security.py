@@ -1,6 +1,7 @@
 import hashlib
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
+from app.core.utc import UTC
 from typing import Any
 from uuid import UUID
 

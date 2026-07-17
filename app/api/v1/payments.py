@@ -9,7 +9,8 @@ Webhooks are public (no auth) but verify the provider signature. They look the
 invoice up by the stored provider order id.
 """
 
-from datetime import UTC, datetime
+from datetime import datetime
+from app.core.utc import UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status

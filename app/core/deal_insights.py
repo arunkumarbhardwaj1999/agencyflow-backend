@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import date, datetime
+from app.core.utc import UTC
 
 from app.models.deal import Deal
 from app.models.deal_activity import DealActivity

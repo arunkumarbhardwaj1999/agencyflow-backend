@@ -1,4 +1,5 @@
-from datetime import UTC, date, datetime
+from datetime import date, datetime
+from app.core.utc import UTC
 import re
 from decimal import Decimal
 from uuid import UUID

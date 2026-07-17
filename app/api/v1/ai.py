@@ -1,5 +1,6 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime
+from app.core.utc import UTC
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
