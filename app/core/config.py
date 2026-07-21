@@ -78,6 +78,19 @@ class Settings(BaseSettings):
     msg91_sender_id: str = ""
     msg91_otp_template_id: str = ""
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> str:
+        """Railway/Heroku give postgresql:// — SQLAlchemy async needs +asyncpg."""
+        url = str(value or "").strip()
+        if not url:
+            return "postgresql+asyncpg://postgres:postgres@localhost:5432/agencyflow"
+        if url.startswith("postgres://"):
+            url = "postgresql://" + url[len("postgres://") :]
+        if url.startswith("postgresql://") and not url.startswith("postgresql+asyncpg://"):
+            url = "postgresql+asyncpg://" + url[len("postgresql://") :]
+        return url
+
     @property
     def sms_enabled(self) -> bool:
         provider = (self.sms_provider or "").strip().lower()
