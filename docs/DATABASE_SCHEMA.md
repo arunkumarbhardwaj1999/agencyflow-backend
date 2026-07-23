@@ -14,7 +14,7 @@ PostgreSQL 16 · Alembic
 | projects | Client work |
 | tasks | Project tasks |
 | invoices | Billing |
-| whatsapp_logs | WhatsApp history (Phase 3) |
+| whatsapp_logs | Legacy WhatsApp log table (UI currently disabled) |
 | subscription_plans | Plan limits |
 | password_reset_tokens | Forgot-password tokens |
 

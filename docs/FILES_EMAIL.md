@@ -49,13 +49,13 @@ To go live: create an R2 bucket + API token, fill the four `R2_*` values, and
 
 Transactional email via **Resend**. With no API key it runs in **mock mode** —
 emails are logged to the console so flows can be tested without a mailbox.
-Sends never block or break the request that triggered them.
 
-- **Welcome email** — sent on workspace registration.
-- **Password reset** — the reset link is emailed; in mock mode the token is also
-  returned in the API response for local testing.
-- **Invoice email** — email a tax-invoice PDF (attached) to the client, with an
-  optional pay-now link.
+For step-by-step Resend setup, see [`SETUP_EMAIL.md`](SETUP_EMAIL.md).
+
+- **Welcome / confirmation** — workspace registration  
+- **Password reset** — reset link emailed (mock mode may also return token in API)  
+- **Invoice email** — tax-invoice PDF to the client, optional pay link  
+- **Invites / proposals / contracts** — other transactional mail  
 
 ### API
 
@@ -71,12 +71,9 @@ EMAIL_FROM=noreply@agencyflow.in
 EMAIL_FROM_NAME=AgencyFlow
 ```
 
-To go live: create a Resend API key, verify your sending domain, set
-`RESEND_API_KEY` + `EMAIL_FROM`.
-
 ## Manual test (mock mode, no keys needed)
 
-1. **Team → Workspace branding** → upload a logo → preview updates.
-2. **Projects** → expand a project → **Documents** → upload a file → download / delete.
-3. **Invoices** → **Email** on any invoice → toast confirms (check API logs for the mock send).
-4. **Register** a new workspace / **Forgot password** → check API console for the mock email log.
+1. **Projects** → documents → upload / download / delete.  
+2. **Invoices** → **Email** on any invoice → toast confirms (check API logs for mock send).  
+3. **Register** / **Forgot password** → check API console for the mock email log.  
+4. **Settings → Integrations** → Email shows Mock or Live.

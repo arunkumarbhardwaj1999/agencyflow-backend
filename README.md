@@ -46,4 +46,7 @@ uvicorn app.main:app --reload
 - [`docs/LEADS_PIPELINE.md`](docs/LEADS_PIPELINE.md)
 - [`docs/BILLING_PAYMENTS.md`](docs/BILLING_PAYMENTS.md)
 - [`docs/CLIENT_PORTAL.md`](docs/CLIENT_PORTAL.md)
+- [`docs/FILES_EMAIL.md`](docs/FILES_EMAIL.md)
+- [`docs/SETUP_EMAIL.md`](docs/SETUP_EMAIL.md)
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 - Verify DB: `python -m scripts.verify_schema`
