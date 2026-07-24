@@ -266,6 +266,10 @@ async def _update_status_action(db: AsyncSession, company_id: UUID, ctx: dict, c
     if entity_type == "task":
         task = await db.get(Task, UUID(str(entity_id)))
         if task and task.company_id == company_id:
+            # Never undo a completed task via automation (common misconfig that
+            # made Done → In Progress snap-back on the kanban board).
+            if task.status == "done" and new_status != "done":
+                return "Skipped: will not move a completed task via automation"
             task.status = new_status
             await db.flush()
             return f"Task status → {new_status}"

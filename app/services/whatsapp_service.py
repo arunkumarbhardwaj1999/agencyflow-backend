@@ -108,18 +108,23 @@ def enqueue_whatsapp(
         return "queued"
     except Exception as exc:
         logger.info("Celery unavailable (%s), sending WhatsApp in-process", exc)
-        asyncio.create_task(
-            deliver_whatsapp(
-                company_id=company_id,
-                client_id=client_id,
-                phone=phone,
-                message=message,
-                template_key=template_key,
-                params=params,
-                use_template=use_template,
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(
+                deliver_whatsapp(
+                    company_id=company_id,
+                    client_id=client_id,
+                    phone=phone,
+                    message=message,
+                    template_key=template_key,
+                    params=params,
+                    use_template=use_template,
+                )
             )
-        )
-        return "processing"
+            return "processing"
+        except RuntimeError:
+            logger.warning("No event loop available; skipping WhatsApp send")
+            return "skipped"
 
 
 async def notify_invoice_payment_received(

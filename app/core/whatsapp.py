@@ -67,7 +67,10 @@ def render_template(name: str, **kwargs: str) -> str:
     tpl = TEMPLATES.get(name)
     if not tpl:
         raise WhatsAppError(f"Unknown template: {name}")
-    return tpl.format(**kwargs)
+    try:
+        return tpl.format(**{k: str(v) if v is not None else "" for k, v in kwargs.items()})
+    except (KeyError, ValueError) as exc:
+        raise WhatsAppError(f"Template render failed for {name}: {exc}") from exc
 
 
 def _template_components(template_key: str, params: dict[str, str]) -> list[dict[str, Any]]:

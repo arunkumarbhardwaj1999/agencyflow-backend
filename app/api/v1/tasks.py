@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import logging
 
 from app.core.automation_engine import fire_trigger
 from app.core.deps import CurrentUser, require_company, require_permission
@@ -17,6 +18,7 @@ from app.schemas.task import TaskCreate, TaskOut, TaskUpdate
 from app.services.whatsapp_service import enqueue_whatsapp
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+logger = logging.getLogger("agencyflow.tasks")
 
 TASK_STATUSES = {"todo", "in_progress", "review", "done"}
 TASK_PRIORITIES = {"low", "medium", "high", "urgent"}
@@ -80,6 +82,9 @@ async def update_task(
     else:
         data = body.model_dump(exclude_unset=True)
 
+    if not data:
+        return task
+
     if "status" in data:
         await _validate_task_fields(data["status"], data.get("priority", task.priority))
     if "priority" in data:
@@ -88,20 +93,36 @@ async def update_task(
     old_status = task.status
     for k, v in data.items():
         setattr(task, k, v)
-    await db.flush()
+    # Persist status first so notify/automation failures cannot roll it back
+    # and so realtime refetch cannot read a stale value.
+    await db.commit()
     await db.refresh(task)
-    await realtime_manager.broadcast(current.company_id, "task", f"Task updated: {task.title} ({task.status})")
+
+    try:
+        await realtime_manager.broadcast(
+            current.company_id, "task", f"Task updated: {task.title} ({task.status})"
+        )
+    except Exception:
+        logger.exception("Realtime broadcast failed for task %s", task.id)
 
     if "status" in data and data["status"] == "done" and old_status != "done":
-        await _maybe_notify_task_done(db, task, current.company_id)
-        await fire_trigger(
-            db,
-            company_id=current.company_id,
-            trigger_key="task_completed",
-            entity_type="task",
-            entity_id=task.id,
-            context={"project_id": str(task.project_id), "name": task.title},
-        )
+        try:
+            await _maybe_notify_task_done(db, task, current.company_id)
+            await fire_trigger(
+                db,
+                company_id=current.company_id,
+                trigger_key="task_completed",
+                entity_type="task",
+                entity_id=task.id,
+                context={"project_id": str(task.project_id), "name": task.title},
+            )
+            await db.commit()
+        except Exception:
+            logger.exception("Post-complete side effects failed for task %s", task.id)
+            await db.rollback()
+            # Re-load after rollback so response serialization does not hit an expired instance
+            result = await db.execute(select(Task).where(Task.id == task_id))
+            task = result.scalar_one()
 
     return task
 
@@ -148,23 +169,26 @@ async def _get_task(db: AsyncSession, task_id: UUID, current: CurrentUser) -> Ta
 
 
 async def _maybe_notify_task_done(db: AsyncSession, task: Task, company_id: UUID) -> None:
-    project = await db.get(Project, task.project_id)
-    if not project:
-        return
-    client = await db.get(Client, project.client_id)
-    if not client or not client.phone:
-        return
-    params = {
-        "name": client.business_name,
-        "project_title": project.title,
-        "detail": f'Task "{task.title}" is complete.',
-    }
-    message = render_template("task_update", **params)
-    enqueue_whatsapp(
-        company_id=company_id,
-        client_id=client.id,
-        phone=client.phone,
-        message=message,
-        template_key="task_update",
-        params=params,
-    )
+    try:
+        project = await db.get(Project, task.project_id)
+        if not project:
+            return
+        client = await db.get(Client, project.client_id)
+        if not client or not client.phone:
+            return
+        params = {
+            "name": client.business_name or client.name or "Client",
+            "project_title": project.title or "Project",
+            "detail": f'Task "{task.title}" is complete.',
+        }
+        message = render_template("task_update", **params)
+        enqueue_whatsapp(
+            company_id=company_id,
+            client_id=client.id,
+            phone=client.phone,
+            message=message,
+            template_key="task_update",
+            params=params,
+        )
+    except Exception:
+        logger.exception("WhatsApp task-done notify failed for task %s", task.id)
