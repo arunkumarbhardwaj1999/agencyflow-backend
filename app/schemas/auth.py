@@ -39,6 +39,20 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class UpdateProfileRequest(BaseModel):
+    first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    last_name: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=20)
+
+    @field_validator("first_name", "last_name", "phone", mode="before")
+    @classmethod
+    def empty_to_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return value
+
+
 class GoogleLoginRequest(BaseModel):
     credential: str = Field(min_length=20)
 

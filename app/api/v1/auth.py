@@ -60,6 +60,7 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     SendOtpRequest,
     SendOtpResponse,
+    UpdateProfileRequest,
     VerifyOtpRequest,
     VerifyOtpResponse,
 )
@@ -677,6 +678,30 @@ async def logout(_: CurrentUser = Depends(get_current_user)):
 @router.get("/me", response_model=UserOut)
 async def me(current: CurrentUser = Depends(get_current_user)):
     return _user_out(current.user, current.role_name)
+
+
+@router.patch("/me", response_model=UserOut)
+async def update_me(
+    body: UpdateProfileRequest,
+    current: CurrentUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Any logged-in role can update their own name and phone."""
+    data = body.model_dump(exclude_unset=True)
+    if not data:
+        return _user_out(current.user, current.role_name)
+
+    user = current.user
+    if "first_name" in data and data["first_name"]:
+        user.first_name = data["first_name"]
+    if "last_name" in data:
+        user.last_name = data["last_name"]
+    if "phone" in data:
+        user.phone = data["phone"]
+
+    await db.flush()
+    await db.refresh(user)
+    return _user_out(user, current.role_name)
 
 
 @router.post("/change-password", response_model=MessageResponse)
