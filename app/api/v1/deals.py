@@ -279,27 +279,31 @@ async def _win_deal(
     if not deal.contact_email:
         raise HTTPException(status_code=400, detail="Deal must have a contact email to win")
 
-    await assert_can_add_client(db, current.company_id)
     existing = await db.execute(
         select(Client).where(
             Client.company_id == current.company_id,
             Client.email == deal.contact_email,
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="A client with this email already exists")
+    client = existing.scalar_one_or_none()
+    created_new = False
 
-    client = Client(
-        company_id=current.company_id,
-        assigned_user_id=deal.assigned_user_id,
-        name=deal.contact_name or deal.title,
-        business_name=deal.company_name or deal.contact_name or deal.title,
-        email=deal.contact_email,
-        phone=deal.contact_phone,
-        notes=deal.notes,
-    )
-    db.add(client)
-    await db.flush()
+    if client is None:
+        await assert_can_add_client(db, current.company_id)
+        client = Client(
+            company_id=current.company_id,
+            assigned_user_id=deal.assigned_user_id,
+            name=deal.contact_name or deal.title,
+            business_name=deal.company_name or deal.contact_name or deal.title,
+            email=deal.contact_email,
+            phone=deal.contact_phone,
+            notes=deal.notes,
+        )
+        db.add(client)
+        await db.flush()
+        created_new = True
+    elif deal.assigned_user_id and not client.assigned_user_id:
+        client.assigned_user_id = deal.assigned_user_id
 
     deal.status = "won"
     deal.probability = 100
@@ -324,9 +328,13 @@ async def _win_deal(
         deal_id=deal.id,
         company_id=current.company_id,
         event_type="deal_won",
-        description=f"Deal won — client created: {client.business_name}",
+        description=(
+            f"Deal won — linked to existing client: {client.business_name}"
+            if not created_new
+            else f"Deal won — client created: {client.business_name}"
+        ),
         created_by_id=current.id,
-        metadata={"client_id": str(client.id)},
+        metadata={"client_id": str(client.id), "created_new_client": created_new},
     )
     await fire_trigger(
         db,
