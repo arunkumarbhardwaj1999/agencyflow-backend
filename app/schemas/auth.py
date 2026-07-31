@@ -43,8 +43,9 @@ class UpdateProfileRequest(BaseModel):
     first_name: str | None = Field(default=None, min_length=1, max_length=100)
     last_name: str | None = Field(default=None, max_length=100)
     phone: str | None = Field(default=None, max_length=20)
+    address: str | None = Field(default=None, max_length=500)
 
-    @field_validator("first_name", "last_name", "phone", mode="before")
+    @field_validator("first_name", "last_name", "phone", "address", mode="before")
     @classmethod
     def empty_to_none(cls, value: object) -> object:
         if isinstance(value, str):

@@ -99,6 +99,7 @@ def _user_out(user: User, role_name: str) -> UserOut:
         username=user.username,
         email=user.email,
         phone=user.phone,
+        address=user.address,
         role=role_name,
         is_active=user.is_active,
         is_verified=user.is_verified,
@@ -686,7 +687,7 @@ async def update_me(
     current: CurrentUser = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Any logged-in role can update their own name and phone."""
+    """Any logged-in role can update their own name, phone, and address."""
     data = body.model_dump(exclude_unset=True)
     if not data:
         return _user_out(current.user, current.role_name)
@@ -698,6 +699,8 @@ async def update_me(
         user.last_name = data["last_name"]
     if "phone" in data:
         user.phone = data["phone"]
+    if "address" in data:
+        user.address = data["address"]
 
     await db.flush()
     await db.refresh(user)

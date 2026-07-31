@@ -26,6 +26,7 @@ class UserOut(ORMModel):
     username: str
     email: str
     phone: str | None
+    address: str | None
     role: str
     is_active: bool
     is_verified: bool
