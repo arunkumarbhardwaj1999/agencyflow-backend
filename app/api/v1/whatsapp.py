@@ -1,5 +1,8 @@
 from datetime import date
 from uuid import UUID
+import hashlib
+import hmac
+import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -159,7 +162,26 @@ async def whatsapp_webhook_receive(
     db: AsyncSession = Depends(get_db),
 ):
     """Receive inbound WhatsApp messages from Meta Cloud API."""
-    payload = await request.json()
+    raw = await request.body()
+    app_secret = (settings.whatsapp_app_secret or "").strip()
+    if app_secret:
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        expected = "sha256=" + hmac.new(
+            app_secret.encode("utf-8"),
+            raw,
+            hashlib.sha256,
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            raise HTTPException(status_code=403, detail="Invalid webhook signature")
+
+    try:
+        payload = json.loads(raw.decode("utf-8") or "{}") if raw else {}
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise HTTPException(status_code=400, detail="Invalid webhook payload") from None
+
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Invalid webhook payload")
+
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
             value = change.get("value", {})

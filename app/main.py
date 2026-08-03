@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
+import logging
 
 from uuid import UUID
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi import _rate_limit_exceeded_handler
 
@@ -15,10 +17,36 @@ from app.core.realtime_bus import start_subscriber, stop_subscriber
 from app.core.security import decode_token
 
 settings = get_settings()
+logger = logging.getLogger("agencyflow")
+
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.DEBUG if settings.debug else logging.INFO,
+        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    )
+
+
+def _assert_production_safe() -> None:
+    """Fail fast only in production; warn for other non-debug insecure defaults."""
+    env = (settings.environment or "").strip().lower()
+    weak_secret = settings.secret_key in ("", "dev-secret-change-in-production")
+    if env in ("production", "prod") and weak_secret:
+        raise RuntimeError(
+            "SECRET_KEY must be set to a strong unique value when ENVIRONMENT is production."
+        )
+    if not settings.debug and weak_secret:
+        logger.warning(
+            "Using the default SECRET_KEY with DEBUG disabled. Set a unique SECRET_KEY before go-live."
+        )
+    if env in ("production", "prod") and settings.payments_mock:
+        logger.warning(
+            "PAYMENTS_MOCK is enabled in production — payment links will not use live gateways."
+        )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    _assert_production_safe()
     await start_subscriber(realtime_manager.relay)
     yield
     await stop_subscriber()
@@ -34,6 +62,16 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Something went wrong on our side. Please try again shortly."},
+    )
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
@@ -47,10 +85,9 @@ app.add_middleware(
 @app.get("/health")
 @limiter.limit(settings.rate_limit)
 async def health(request: Request):
-    return {
-        "status": "ok",
-        "app": settings.app_name,
-        "integrations": {
+    payload: dict = {"status": "ok", "app": settings.app_name}
+    if settings.debug:
+        payload["integrations"] = {
             "email": {
                 "enabled": settings.email_enabled,
                 "provider": settings.email_provider_name,
@@ -72,8 +109,8 @@ async def health(request: Request):
                 "stripe": settings.stripe_enabled,
             },
             "ai": {"enabled": settings.ai_enabled, "provider": settings.ai_provider},
-        },
-    }
+        }
+    return payload
 
 
 @app.websocket("/ws/dashboard/{company_id}")

@@ -178,6 +178,8 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     whatsapp_business_account_id: str = ""
     whatsapp_webhook_verify_token: str = "agencyflow-dev"
+    # Optional Meta app secret — when set, inbound webhook POSTs are signature-checked.
+    whatsapp_app_secret: str = ""
 
     # AI — keys stay on backend only (never frontend).
     # Provider: openai (default) | gemini | anthropic | auto | mock

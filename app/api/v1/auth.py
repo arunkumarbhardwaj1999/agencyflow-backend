@@ -208,7 +208,10 @@ async def register(
     owner_role = await db.execute(select(Role).where(Role.name == "owner"))
     role = owner_role.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=500, detail="System roles not seeded. Run: python -m scripts.seed_roles")
+        raise HTTPException(
+            status_code=500,
+            detail="Workspace setup is incomplete. Please contact support.",
+        )
 
     username = await unique_username(db, username_from_email(email))
     workspace_name = f"{body.first_name} {body.last_name or ''}".strip() or username.replace("_", " ").title()
@@ -329,7 +332,10 @@ async def google_register(
     owner_role = await db.execute(select(Role).where(Role.name == "owner"))
     role = owner_role.scalar_one_or_none()
     if not role:
-        raise HTTPException(status_code=500, detail="System roles not seeded")
+        raise HTTPException(
+            status_code=500,
+            detail="Workspace setup is incomplete. Please contact support.",
+        )
 
     username = await unique_username(db, username_from_email(email))
     workspace_name = username.replace("_", " ").title()
@@ -391,13 +397,10 @@ async def register_send_otp(
     await db.flush()
     sent, send_err = await send_otp_to_phone(phone, code, recipient_name=user.first_name or "there")
     if not sent:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Could not send OTP by SMS. Set SMS_PROVIDER (twilio or msg91) and API keys in backend .env."
-                + (f" ({send_err})" if settings.debug and send_err else "")
-            ),
-        )
+        detail = "Unable to send the verification code by SMS. Please try again shortly."
+        if settings.debug and send_err:
+            detail = f"{detail} ({send_err})"
+        raise HTTPException(status_code=502, detail=detail)
 
     dev_otp = code if settings.debug else None
     message = "Verification code sent by SMS to your mobile number."

@@ -209,7 +209,7 @@ async def send_otp_code(phone: str, code: str, *, recipient_name: str = "there")
         raise WhatsAppError("Invalid phone number")
 
     if not settings.whatsapp_enabled:
-        logger.info("[WHATSAPP MOCK OTP] to=%s code=%s", to, code)
+        logger.info("[WHATSAPP MOCK OTP] to=%s (code omitted)", to)
         return {"status": "mock", "to": to, "message_id": None, "delivery": "otp"}
 
     template_name = settings.whatsapp_otp_template.strip() or "jaspers_market_order_confirmation_v1"

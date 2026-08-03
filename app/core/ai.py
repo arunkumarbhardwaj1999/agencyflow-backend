@@ -28,6 +28,14 @@ class AIError(Exception):
     pass
 
 
+def public_ai_error(exc: Exception) -> str:
+    """User-facing AI failure message; keep internals for debug only."""
+    msg = str(exc).strip()
+    if settings.debug and msg and len(msg) <= 200 and "traceback" not in msg.lower():
+        return msg
+    return "AI is temporarily unavailable. Please try again shortly."
+
+
 async def _openai_complete(system: str, user_prompt: str, max_tokens: int) -> str:
     payload = {
         "model": settings.openai_model,

@@ -12,7 +12,7 @@ class GoogleAuthError(Exception):
 async def verify_google_id_token(id_token: str) -> dict:
     settings = get_settings()
     if not settings.google_client_id:
-        raise GoogleAuthError("Google sign-in is not configured on the server")
+        raise GoogleAuthError("Google sign-in is not available right now")
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(
@@ -22,16 +22,16 @@ async def verify_google_id_token(id_token: str) -> dict:
         )
 
     if resp.status_code != 200:
-        raise GoogleAuthError("Invalid or expired Google token")
+        raise GoogleAuthError("Google sign-in failed. Please try again")
 
     data = resp.json()
     if data.get("aud") != settings.google_client_id:
-        raise GoogleAuthError("Google token audience mismatch")
+        raise GoogleAuthError("Google sign-in failed. Please try again")
     if str(data.get("email_verified", "")).lower() != "true":
-        raise GoogleAuthError("Google email is not verified")
+        raise GoogleAuthError("Please verify your Google email, then try again")
 
     email = data.get("email")
     if not email:
-        raise GoogleAuthError("Google token missing email")
+        raise GoogleAuthError("Google sign-in did not return an email address")
 
     return data

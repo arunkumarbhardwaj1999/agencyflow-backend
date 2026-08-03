@@ -15,6 +15,7 @@ from app.core.ai import (
     draft_invoice_email,
     draft_lead_email,
     polish_task_description,
+    public_ai_error,
     stream_complete,
     suggest_followups,
     summarize_project,
@@ -222,7 +223,7 @@ async def ai_draft_email(
             agency_name=company.company_name if company else "AgencyFlow",
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 
@@ -251,7 +252,7 @@ async def ai_draft_invoice_email(
             agency_name=company.company_name if company else "AgencyFlow",
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 
@@ -277,7 +278,7 @@ async def ai_polish_task(
             project_title=project.title if project else "Project",
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 
@@ -305,7 +306,7 @@ async def ai_draft_client_welcome(
             project_title=project_title,
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 
@@ -340,7 +341,7 @@ async def ai_summarize_project(
             description=project.description,
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 
@@ -379,7 +380,7 @@ async def ai_suggest_followups(
             agency_name=company.company_name if company else "AgencyFlow",
         )
     except AIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=public_ai_error(exc)) from exc
     return AIResponse(content=content, mode=_mode())
 
 

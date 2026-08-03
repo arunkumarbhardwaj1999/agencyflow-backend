@@ -26,7 +26,7 @@ async def send_otp_to_phone(phone: str, code: str, *, recipient_name: str = "the
     message = f"Your AgencyFlow verification code is {code}. Valid for 10 minutes."
 
     if not settings.sms_enabled:
-        logger.info("[OTP MOCK SMS] phone=%s code=%s", phone, code)
+        logger.info("[OTP MOCK SMS] phone=%s (code omitted)", phone)
         return True, "mock"
 
     try:
@@ -55,6 +55,6 @@ async def send_otp_to_email(email: str, code: str, workspace: str) -> tuple[bool
     )
     ok, err = await send_custom_email(email, subject, body)
     if not ok:
-        logger.info("[OTP MOCK EMAIL] email=%s code=%s", email, code)
+        logger.info("[OTP MOCK EMAIL] email=%s (code omitted)", email)
         return True, err or "logged"
     return True, None
